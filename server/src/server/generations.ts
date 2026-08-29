@@ -3,6 +3,7 @@ import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
 import { conformImages } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
+import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
 
 export function validateGenBody(body: unknown): { model: string; req: UnifiedGenRequest; stream: boolean } {
@@ -97,7 +98,9 @@ export async function finishSync(
 export function registerGenerations(ctx: AppContext): void {
   ctx.app.post("/v1/images/generations", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { model, req: genReq, stream } = validateGenBody(req.body);
-    void stream; // 流式在 Task 12 接入
+    if (stream) {
+      return streamImageFlow(ctx, req, reply, model, "generate", genReq, fileBaseUrlFor(ctx, req));
+    }
     return finishSync(ctx, req, reply, model, "generate", genReq);
   });
 }

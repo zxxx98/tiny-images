@@ -2,7 +2,8 @@ import type { FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
 import type { IncomingImage, UnifiedEditRequest } from "../core/types.js";
 import type { AppContext } from "../app.js";
-import { finishSync, requestSignal } from "./generations.js";
+import { finishSync, fileBaseUrlFor } from "./generations.js";
+import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
 
 export function registerEdits(ctx: AppContext): void {
@@ -41,7 +42,9 @@ export function registerEdits(ctx: AppContext): void {
       mask,
       passthrough: common.passthrough,
     };
-    void common.stream; // 流式在 Task 12 接入
+    if (common.stream) {
+      return streamImageFlow(ctx, req, reply, model, "edit", editReq, fileBaseUrlFor(ctx, req));
+    }
     return finishSync(ctx, req, reply, model, "edit", editReq);
   });
 }
