@@ -12,10 +12,11 @@ export function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 
-function toBlobPart(data: Buffer): Uint8Array {
+function toBlob(data: Buffer, mimeType: string): Blob {
+  // Buffer/Uint8Array 运行时可被 Blob 接受，但 @types/node 的 BlobPart 类型不含 ArrayBufferLike 视图
   const bytes = new Uint8Array(data.byteLength);
   bytes.set(data);
-  return bytes;
+  return new Blob([bytes as unknown as BlobPart], { type: mimeType });
 }
 
 export class OpenAICompatProvider implements ImageProvider {
@@ -59,10 +60,10 @@ export class OpenAICompatProvider implements ImageProvider {
       if (typeof v === "string" || typeof v === "number") form.append(k, String(v));
     }
     for (const img of req.images) {
-      form.append("image", new Blob([toBlobPart(img.data)], { type: img.mimeType }), img.filename || "image.png");
+      form.append("image", toBlob(img.data, img.mimeType), img.filename || "image.png");
     }
     if (req.mask) {
-      form.append("mask", new Blob([toBlobPart(req.mask.data)], { type: req.mask.mimeType }), req.mask.filename || "mask.png");
+      form.append("mask", toBlob(req.mask.data, req.mask.mimeType), req.mask.filename || "mask.png");
     }
     const timeout = AbortSignal.timeout(ctx.channel.timeoutMs);
     const signal = AbortSignal.any([ctx.signal, timeout]);

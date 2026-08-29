@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
-import type { UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
+import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
 import { conformImages } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
 import { requireString, validateCommonFields } from "./validate.js";
