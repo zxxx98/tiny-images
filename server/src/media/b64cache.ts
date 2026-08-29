@@ -60,7 +60,7 @@ async function fetchAsB64(url: string, timeoutMs: number, signal: AbortSignal | 
 
 export interface ConformOptions {
   images: UnifiedImage[];
-  wanted: "url" | "b64_json";
+  wanted: "url" | "b64_json" | "auto";
   dataDir: string;
   fileBaseUrl: string;
   fetchTimeoutMs: number;
@@ -68,6 +68,7 @@ export interface ConformOptions {
 }
 
 export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[]> {
+  if (opts.wanted === "auto") return opts.images;
   const out: UnifiedImage[] = [];
   for (const img of opts.images) {
     if (opts.wanted === "b64_json") {

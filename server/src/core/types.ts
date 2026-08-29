@@ -24,7 +24,8 @@ export interface UnifiedGenRequest {
   n: number;
   size?: string;
   quality?: string;
-  responseFormat: "url" | "b64_json";
+  /** "auto" = 客户端未指定，保持上游返回的原生格式 */
+  responseFormat: "url" | "b64_json" | "auto";
   passthrough: Record<string, unknown>;
 }
 
@@ -38,7 +39,8 @@ export interface UnifiedEditRequest {
   prompt: string;
   n: number;
   size?: string;
-  responseFormat: "url" | "b64_json";
+  /** "auto" = 客户端未指定，保持上游返回的原生格式 */
+  responseFormat: "url" | "b64_json" | "auto";
   images: IncomingImage[];
   mask?: IncomingImage;
   passthrough: Record<string, unknown>;
