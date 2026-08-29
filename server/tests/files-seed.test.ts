@@ -85,7 +85,7 @@ describe("GET /files/:name", () => {
     const ok = await app.inject({ url: `/files/${fileName}` });
     expect(ok.statusCode).toBe(200);
     expect(ok.headers["content-type"]).toBe("image/png");
-    expect(ok.body).toEqual(Buffer.from(PNG_B64, "base64").toString("binary"));
+    expect(ok.rawPayload).toEqual(Buffer.from(PNG_B64, "base64"));
     expect((await app.inject({ url: "/files/../secret" })).statusCode).toBe(404);
     expect((await app.inject({ url: "/files/zzz.png" })).statusCode).toBe(404);
     await app.close();
