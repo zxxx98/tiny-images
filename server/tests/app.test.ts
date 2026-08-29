@@ -59,7 +59,7 @@ describe("health", () => {
 describe("requireApiKey", () => {
   it("open mode when no api keys", async () => {
     const a = await app(null);
-    expect((await a.inject({ url: "/v1/models" })).statusCode).toBe(404);
+    expect((await a.inject({ url: "/v1/models" })).statusCode).toBe(200);
     await a.close();
   });
   it("rejects bad bearer when keys exist", async () => {
@@ -74,8 +74,8 @@ describe("requireApiKey", () => {
   it("accepts valid key and admin token", async () => {
     const k = repo.createApiKey("k1");
     const a = await app("admin-secret");
-    expect((await a.inject({ url: "/v1/models", headers: { authorization: `Bearer ${k.key}` } })).statusCode).toBe(404);
-    expect((await a.inject({ url: "/v1/models", headers: { authorization: "Bearer admin-secret" } })).statusCode).toBe(404);
+    expect((await a.inject({ url: "/v1/models", headers: { authorization: `Bearer ${k.key}` } })).statusCode).toBe(200);
+    expect((await a.inject({ url: "/v1/models", headers: { authorization: "Bearer admin-secret" } })).statusCode).toBe(200);
     await a.close();
   });
 });
