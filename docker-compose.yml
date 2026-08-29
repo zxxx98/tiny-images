@@ -1,0 +1,15 @@
+services:
+  tiny-images:
+    build: .
+    container_name: tiny-images
+    ports:
+      - "3000:3000"
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+    volumes:
+      - tiny-data:/data
+    restart: unless-stopped
+
+volumes:
+  tiny-data:

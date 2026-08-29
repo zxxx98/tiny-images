@@ -8,6 +8,7 @@ import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
 import { Repo } from "./store/repo.js";
 import { seedIfEmpty } from "./store/seed.js";
+import path from "node:path";
 
 const env = loadEnv();
 const db = openDb(env.dataDir);
@@ -19,7 +20,16 @@ const keyPool = new KeyPool(repo);
 const provider = new OpenAICompatProvider();
 const executor = new Executor({ router, keyPool, provider, repo });
 
-const app = await buildApp({ env, repo, router, keyPool, provider, executor, logger: true });
+const app = await buildApp({
+  env,
+  repo,
+  router,
+  keyPool,
+  provider,
+  executor,
+  logger: true,
+  webDist: path.resolve(import.meta.dirname, "../../web/dist"),
+});
 
 // 每小时清理过期的生成图缓存（TTL 24h）
 const sweep = (): void => {
