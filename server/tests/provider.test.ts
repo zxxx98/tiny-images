@@ -104,7 +104,7 @@ describe("OpenAICompatProvider.generate", () => {
 });
 
 describe("OpenAICompatProvider.test", () => {
-  it("reports ok on 200 and failure otherwise", async () => {
+  it("reports ok on 200 with and without key", async () => {
     let seenAuth = "";
     upstream.get("/v1/models", async (req, reply) => {
       seenAuth = String(req.headers.authorization ?? "<none>");
@@ -116,7 +116,11 @@ describe("OpenAICompatProvider.test", () => {
     expect(seenAuth).toBe("Bearer sk-x");
     expect((await p.test(channel(), null)).ok).toBe(true);
     expect(seenAuth).toBe("<none>");
+  });
+
+  it("reports failure on upstream error", async () => {
     upstream.get("/v1/models", async (_req, reply) => reply.code(500).send({}));
-    expect((await p.test(channel(), "sk-x")).ok).toBe(false);
+    await start();
+    expect((await new OpenAICompatProvider().test(channel(), "sk-x")).ok).toBe(false);
   });
 });
