@@ -1,5 +1,6 @@
 import type { AppContext } from "../app.js";
 import { registerGenerations } from "./generations.js";
+import { registerEdits } from "./edits.js";
 
 export function registerV1(ctx: AppContext): void {
   ctx.app.get("/v1/models", { preHandler: ctx.requireApiKey }, async () => {
@@ -10,5 +11,6 @@ export function registerV1(ctx: AppContext): void {
     };
   });
   registerGenerations(ctx);
-  // edits（Task 11）与流式（Task 12）在后续接入
+  registerEdits(ctx);
+  // 流式（Task 12）在后续接入
 }

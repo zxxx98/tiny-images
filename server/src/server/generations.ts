@@ -3,59 +3,27 @@ import { ValidationError } from "../core/errors.js";
 import type { UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
 import { conformImages } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
+import { requireString, validateCommonFields } from "./validate.js";
 
-const SIZE_RE = /^(\d{3,4}x\d{3,4}|auto)$/;
-const KNOWN_GEN_FIELDS = new Set(["model", "prompt", "n", "size", "quality", "response_format", "stream"]);
-
-interface ValidatedGen {
-  model: string;
-  req: UnifiedGenRequest;
-  stream: boolean;
-}
-
-export function validateGenBody(body: unknown): ValidatedGen {
+export function validateGenBody(body: unknown): { model: string; req: UnifiedGenRequest; stream: boolean } {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new ValidationError("request body must be a JSON object");
   }
   const b = body as Record<string, unknown>;
-  if (typeof b.model !== "string" || b.model.length === 0) throw new ValidationError("'model' is required");
-  if (typeof b.prompt !== "string" || b.prompt.length === 0) throw new ValidationError("'prompt' is required");
-  let n = 1;
-  if (b.n !== undefined) {
-    if (!Number.isInteger(b.n) || (b.n as number) < 1 || (b.n as number) > 10) throw new ValidationError("'n' must be an integer between 1 and 10");
-    n = b.n as number;
-  }
-  if (b.size !== undefined && (typeof b.size !== "string" || !SIZE_RE.test(b.size))) {
-    throw new ValidationError("'size' must match '<width>x<height>' (e.g. 1024x1024) or 'auto'");
-  }
-  if (b.quality !== undefined && typeof b.quality !== "string") throw new ValidationError("'quality' must be a string");
-  let responseFormat: "url" | "b64_json" | "auto" = "auto";
-  if (b.response_format !== undefined) {
-    if (b.response_format !== "url" && b.response_format !== "b64_json") {
-      throw new ValidationError("'response_format' must be 'url' or 'b64_json'");
-    }
-    responseFormat = b.response_format;
-  }
-  let stream = false;
-  if (b.stream !== undefined) {
-    if (typeof b.stream !== "boolean") throw new ValidationError("'stream' must be a boolean");
-    stream = b.stream;
-  }
-  const passthrough: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(b)) {
-    if (!KNOWN_GEN_FIELDS.has(k)) passthrough[k] = v;
-  }
+  const model = requireString(b, "model");
+  const prompt = requireString(b, "prompt");
+  const common = validateCommonFields(b);
   return {
-    model: b.model,
+    model,
+    stream: common.stream,
     req: {
-      prompt: b.prompt,
-      n,
-      size: b.size as string | undefined,
+      prompt,
+      n: common.n,
+      size: common.size,
       quality: b.quality as string | undefined,
-      responseFormat,
-      passthrough,
+      responseFormat: common.responseFormat,
+      passthrough: common.passthrough,
     },
-    stream,
   };
 }
 
@@ -93,24 +61,43 @@ export function requestSignal(req: FastifyRequest, reply: FastifyReply): AbortSi
   return ac.signal;
 }
 
+type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest;
+
+export async function finishSync(
+  ctx: AppContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  model: string,
+  kind: "generate" | "edit",
+  payload: UnifiedPayload,
+): Promise<unknown> {
+  const r =
+    kind === "generate"
+      ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, {
+          callerApiKeyId: req.callerApiKeyId ?? null,
+          signal: requestSignal(req, reply),
+        })
+      : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, {
+          callerApiKeyId: req.callerApiKeyId ?? null,
+          signal: requestSignal(req, reply),
+        });
+  const images = await conformImages({
+    images: r.result.images,
+    wanted: payload.responseFormat,
+    dataDir: ctx.deps.env.dataDir,
+    fileBaseUrl: fileBaseUrlFor(ctx, req),
+    fetchTimeoutMs: r.channel.timeoutMs,
+    signal: requestSignal(req, reply),
+  });
+  reply.header("x-tiny-channel", r.channel.name);
+  reply.header("x-tiny-latency-ms", r.latencyMs);
+  return toImagesResponse(r.result, images);
+}
+
 export function registerGenerations(ctx: AppContext): void {
   ctx.app.post("/v1/images/generations", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { model, req: genReq, stream } = validateGenBody(req.body);
     void stream; // 流式在 Task 12 接入
-    const r = await ctx.deps.executor.generate(model, genReq, {
-      callerApiKeyId: req.callerApiKeyId ?? null,
-      signal: requestSignal(req, reply),
-    });
-    const images = await conformImages({
-      images: r.result.images,
-      wanted: genReq.responseFormat,
-      dataDir: ctx.deps.env.dataDir,
-      fileBaseUrl: fileBaseUrlFor(ctx, req),
-      fetchTimeoutMs: r.channel.timeoutMs,
-      signal: requestSignal(req, reply),
-    });
-    reply.header("x-tiny-channel", r.channel.name);
-    reply.header("x-tiny-latency-ms", r.latencyMs);
-    return toImagesResponse(r.result, images);
+    return finishSync(ctx, req, reply, model, "generate", genReq);
   });
 }
