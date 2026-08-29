@@ -1,0 +1,84 @@
+import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
+import Fastify, { type FastifyInstance } from "fastify";
+import fs from "node:fs";
+import path from "node:path";
+import type { Env } from "./env.js";
+import type { Executor } from "./core/executor.js";
+import type { KeyPool } from "./core/keyPool.js";
+import type { ImageProvider } from "./core/types.js";
+import type { ModelRouter } from "./core/router.js";
+import { toOpenAIError } from "./core/errors.js";
+import type { Repo } from "./store/repo.js";
+import { makeRequireAdmin, makeRequireApiKey } from "./server/auth.js";
+import { registerV1 } from "./server/v1.js";
+import { registerAdmin } from "./server/admin.js";
+import { registerFiles } from "./server/files.js";
+
+export interface AppDeps {
+  env: Env;
+  repo: Repo;
+  router: ModelRouter;
+  keyPool: KeyPool;
+  provider: ImageProvider;
+  executor: Executor;
+  logger?: boolean;
+  webDist?: string | null;
+}
+
+export interface AppContext {
+  app: FastifyInstance;
+  deps: AppDeps;
+  requireApiKey: ReturnType<typeof makeRequireApiKey>;
+  requireAdmin: ReturnType<typeof makeRequireAdmin>;
+}
+
+const API_PREFIXES = ["/v1", "/admin", "/files"];
+
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: deps.logger ?? false,
+    bodyLimit: 16 * 1024 * 1024,
+  });
+
+  await app.register(multipart, {
+    limits: { fileSize: 50 * 1024 * 1024, files: 6 },
+  });
+
+  const requireApiKey = makeRequireApiKey({ repo: deps.repo, adminToken: deps.env.adminToken });
+  const requireAdmin = makeRequireAdmin({ repo: deps.repo, adminToken: deps.env.adminToken });
+  const ctx: AppContext = { app, deps, requireApiKey, requireAdmin };
+
+  app.get("/health", async () => ({ ok: true }));
+
+  // 路由注册：
+  registerV1(ctx);
+  registerAdmin(ctx);
+  registerFiles(ctx);
+
+  app.setErrorHandler((err, _req, reply) => {
+    const { status, body } = toOpenAIError(err);
+    reply.code(status).send(body);
+  });
+
+  const webDist = deps.webDist ?? path.resolve(deps.env.dataDir, "..", "web", "dist");
+  const hasWeb = webDist && fs.existsSync(path.join(webDist, "index.html"));
+  if (hasWeb) {
+    await app.register(fastifyStatic, { root: webDist });
+  }
+
+  app.setNotFoundHandler((req, reply) => {
+    const url = req.raw.url ?? "/";
+    if (API_PREFIXES.some((p) => url === p || url.startsWith(`${p}/`) || url.startsWith(`${p}?`))) {
+      reply.code(404).send({ error: { message: `not found: ${req.method} ${url}`, type: "invalid_request_error", code: null } });
+      return;
+    }
+    if (hasWeb) {
+      reply.type("text/html").sendFile("index.html");
+      return;
+    }
+    reply.code(404).send({ error: { message: `not found: ${req.method} ${url}`, type: "invalid_request_error", code: null } });
+  });
+
+  return app;
+}
