@@ -5,10 +5,10 @@ import type { AppContext } from "../app.js";
 
 const NAME_RE = /^([0-9a-f]{32})\.(png|jpe?g|webp)$/;
 const CONTENT_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
 };
 
 function notFound(reply: FastifyReply, message: string): void {
