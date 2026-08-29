@@ -1,0 +1,19 @@
+{
+  "name": "tiny-images",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "npm run start -w server",
+    "test": "npm test -w server"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
