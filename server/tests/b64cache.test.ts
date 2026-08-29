@@ -9,20 +9,24 @@ const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 let upstream: ReturnType<typeof Fastify>;
 let base: string;
 let dir: string;
-beforeEach(async () => {
+beforeEach(() => {
   upstream = Fastify();
-  await upstream.listen({ port: 0, host: "127.0.0.1" });
-  base = `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}`;
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "bc-"));
 });
 afterEach(async () => {
   await upstream.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+async function start(): Promise<string> {
+  await upstream.listen({ port: 0, host: "127.0.0.1" });
+  base = `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}`;
+  return base;
+}
 
 describe("conformImages", () => {
   it("keeps b64 when wanted, fetches url to b64 when needed", async () => {
     upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    const base = await start();
     const out = await conformImages({
       images: [{ b64: PNG_B64 }, { url: `${base}/img.png` }],
       wanted: "b64_json",
@@ -34,6 +38,7 @@ describe("conformImages", () => {
     expect(out[1].b64).toBe(PNG_B64);
   });
   it("keeps url when wanted, saves b64 to file when needed", async () => {
+    const base = await start();
     const out = await conformImages({
       images: [{ b64: PNG_B64 }],
       wanted: "url",
@@ -45,6 +50,7 @@ describe("conformImages", () => {
     expect(fs.readdirSync(path.join(dir, "generated"))).toHaveLength(1);
   });
   it("propagates fetch failure", async () => {
+    const base = await start();
     await expect(
       conformImages({
         images: [{ url: `${base}/missing.png` }],
