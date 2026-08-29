@@ -38,8 +38,17 @@ export function toOpenAIError(err: unknown): { status: number; body: OpenAIError
   if (err instanceof ModelNotFoundError) {
     return { status: 404, body: { error: { message: err.message, type: "invalid_request_error", code: "model_not_found" } } };
   }
+  if (err instanceof Error && typeof (err as { statusCode?: unknown }).statusCode === "number") {
+    const status = (err as unknown as { statusCode: number }).statusCode;
+    const type = status === 409 ? "conflict_error" : "invalid_request_error";
+    return { status, body: { error: { message: err.message, type, code: null } } };
+  }
   const message = err instanceof Error ? err.message : String(err);
   return { status: 500, body: { error: { message, type: "internal_error", code: null } } };
+}
+
+export function httpError(status: number, message: string): Error {
+  return Object.assign(new Error(message), { statusCode: status });
 }
 
 interface UpstreamErrorShape {
