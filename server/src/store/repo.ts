@@ -1,0 +1,374 @@
+import { randomBytes } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import type { EditMode } from "../core/types.js";
+
+export interface ChannelRow {
+  id: number;
+  name: string;
+  type: string;
+  baseUrl: string;
+  timeoutMs: number;
+  editMode: EditMode;
+  extraHeaders: Record<string, string>;
+  enabled: boolean;
+  createdAt: number;
+}
+
+export interface KeyRow {
+  id: number;
+  channelId: number;
+  apiKey: string;
+  enabled: boolean;
+  cooldownUntil: number;
+}
+
+export interface ModelRow {
+  id: number;
+  publicName: string;
+  channelId: number;
+  upstreamName: string;
+  enabled: boolean;
+  createdAt: number;
+}
+
+export interface ApiKeyRow {
+  id: number;
+  name: string;
+  key: string;
+  enabled: boolean;
+  createdAt: number;
+}
+
+export interface LogEntry {
+  ts: number;
+  model: string;
+  channelId: number | null;
+  apiKeyId: number | null;
+  status: "ok" | "error";
+  httpStatus: number | null;
+  latencyMs: number | null;
+  errorMessage: string | null;
+}
+
+export interface LogRow extends LogEntry {
+  id: number;
+}
+
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+export interface ChannelInput {
+  name: string;
+  baseUrl: string;
+  timeoutMs?: number;
+  editMode?: EditMode;
+  extraHeaders?: Record<string, string>;
+  enabled?: boolean;
+}
+
+const LOG_KEEP = 1000;
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
+}
+
+export class Repo {
+  private db: DatabaseSync;
+
+  constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  // ---- channels ----
+
+  createChannel(input: ChannelInput): ChannelRow {
+    try {
+      const res = this.db
+        .prepare(
+          `INSERT INTO channels (name, type, base_url, timeout_ms, edit_mode, extra_headers, enabled, created_at)
+           VALUES (?, 'openai-compat', ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.name,
+          input.baseUrl,
+          input.timeoutMs ?? 120000,
+          input.editMode ?? "auto",
+          JSON.stringify(input.extraHeaders ?? {}),
+          input.enabled === false ? 0 : 1,
+          Date.now(),
+        );
+      return this.getChannel(Number(res.lastInsertRowid))!;
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`channel name '${input.name}' already exists`);
+      throw err;
+    }
+  }
+
+  getChannel(id: number): ChannelRow | null {
+    const row = this.db.prepare("SELECT * FROM channels WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toChannel(row) : null;
+  }
+
+  listChannels(): ChannelRow[] {
+    const rows = this.db.prepare("SELECT * FROM channels ORDER BY id").all() as Record<string, unknown>[];
+    return rows.map((r) => this.toChannel(r));
+  }
+
+  updateChannel(id: number, patch: Partial<ChannelInput>): ChannelRow | null {
+    const existing = this.getChannel(id);
+    if (!existing) return null;
+    const merged = { ...existing, ...patch };
+    try {
+      this.db
+        .prepare("UPDATE channels SET name = ?, base_url = ?, timeout_ms = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
+        .run(merged.name, merged.baseUrl, merged.timeoutMs, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`channel name '${merged.name}' already exists`);
+      throw err;
+    }
+    return this.getChannel(id);
+  }
+
+  deleteChannel(id: number): boolean {
+    const res = this.db.prepare("DELETE FROM channels WHERE id = ?").run(id);
+    return Number(res.changes) > 0;
+  }
+
+  private toChannel(row: Record<string, unknown>): ChannelRow {
+    return {
+      id: Number(row.id),
+      name: String(row.name),
+      type: String(row.type),
+      baseUrl: String(row.base_url),
+      timeoutMs: Number(row.timeout_ms),
+      editMode: String(row.edit_mode) as EditMode,
+      extraHeaders: JSON.parse(String(row.extra_headers ?? "{}")) as Record<string, string>,
+      enabled: Number(row.enabled) === 1,
+      createdAt: Number(row.created_at),
+    };
+  }
+
+  // ---- channel keys ----
+
+  createKey(channelId: number, apiKey: string): KeyRow {
+    const res = this.db
+      .prepare("INSERT INTO channel_keys (channel_id, api_key, enabled, cooldown_until) VALUES (?, ?, 1, 0)")
+      .run(channelId, apiKey);
+    return this.getKey(Number(res.lastInsertRowid))!;
+  }
+
+  getKey(keyId: number): KeyRow | null {
+    const row = this.db.prepare("SELECT * FROM channel_keys WHERE id = ?").get(keyId) as Record<string, unknown> | undefined;
+    return row ? this.toKey(row) : null;
+  }
+
+  listKeys(channelId: number): KeyRow[] {
+    const rows = this.db.prepare("SELECT * FROM channel_keys WHERE channel_id = ? ORDER BY id").all(channelId) as Record<string, unknown>[];
+    return rows.map((r) => this.toKey(r));
+  }
+
+  enabledKeys(channelId: number): KeyRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM channel_keys WHERE channel_id = ? AND enabled = 1 ORDER BY id")
+      .all(channelId) as Record<string, unknown>[];
+    return rows.map((r) => this.toKey(r));
+  }
+
+  enabledKeyCount(channelId: number): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM channel_keys WHERE channel_id = ? AND enabled = 1").get(channelId) as { n: number | bigint };
+    return Number(row.n);
+  }
+
+  updateKey(keyId: number, patch: { enabled?: boolean; apiKey?: string }): KeyRow | null {
+    const existing = this.getKey(keyId);
+    if (!existing) return null;
+    const enabled = patch.enabled ?? existing.enabled;
+    const apiKey = patch.apiKey ?? existing.apiKey;
+    this.db.prepare("UPDATE channel_keys SET enabled = ?, api_key = ? WHERE id = ?").run(enabled ? 1 : 0, apiKey, keyId);
+    return this.getKey(keyId);
+  }
+
+  deleteKey(keyId: number): boolean {
+    const res = this.db.prepare("DELETE FROM channel_keys WHERE id = ?").run(keyId);
+    return Number(res.changes) > 0;
+  }
+
+  setKeyCooldown(keyId: number, cooldownUntil: number): void {
+    this.db.prepare("UPDATE channel_keys SET cooldown_until = ? WHERE id = ?").run(cooldownUntil, keyId);
+  }
+
+  private toKey(row: Record<string, unknown>): KeyRow {
+    return {
+      id: Number(row.id),
+      channelId: Number(row.channel_id),
+      apiKey: String(row.api_key),
+      enabled: Number(row.enabled) === 1,
+      cooldownUntil: Number(row.cooldown_until),
+    };
+  }
+
+  // ---- models ----
+
+  createModel(input: { publicName: string; channelId: number; upstreamName?: string; enabled?: boolean }): ModelRow {
+    const enabled = input.enabled !== false;
+    if (enabled && this.findEnabledModel(input.publicName)) {
+      throw new ConflictError(`model '${input.publicName}' already exists among enabled models`);
+    }
+    try {
+      const res = this.db
+        .prepare("INSERT INTO models (public_name, channel_id, upstream_name, enabled, created_at) VALUES (?, ?, ?, ?, ?)")
+        .run(input.publicName, input.channelId, input.upstreamName ?? input.publicName, enabled ? 1 : 0, Date.now());
+      return this.getModel(Number(res.lastInsertRowid))!;
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`model '${input.publicName}' already exists among enabled models`);
+      throw err;
+    }
+  }
+
+  getModel(id: number): ModelRow | null {
+    const row = this.db.prepare("SELECT * FROM models WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toModel(row) : null;
+  }
+
+  findEnabledModel(publicName: string): ModelRow | null {
+    const row = this.db.prepare("SELECT * FROM models WHERE public_name = ? AND enabled = 1").get(publicName) as Record<string, unknown> | undefined;
+    return row ? this.toModel(row) : null;
+  }
+
+  listModels(): ModelRow[] {
+    const rows = this.db.prepare("SELECT * FROM models ORDER BY id").all() as Record<string, unknown>[];
+    return rows.map((r) => this.toModel(r));
+  }
+
+  listEnabledModels(): ModelRow[] {
+    const rows = this.db.prepare("SELECT * FROM models WHERE enabled = 1 ORDER BY id").all() as Record<string, unknown>[];
+    return rows.map((r) => this.toModel(r));
+  }
+
+  updateModel(id: number, patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean }): ModelRow | null {
+    const existing = this.getModel(id);
+    if (!existing) return null;
+    const merged = { ...existing, ...patch };
+    if (merged.enabled) {
+      const clash = this.db
+        .prepare("SELECT id FROM models WHERE public_name = ? AND enabled = 1 AND id <> ?")
+        .get(merged.publicName, id) as { id: number } | undefined;
+      if (clash) throw new ConflictError(`model '${merged.publicName}' already exists among enabled models`);
+    }
+    this.db
+      .prepare("UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ? WHERE id = ?")
+      .run(merged.publicName, merged.channelId, merged.upstreamName, merged.enabled ? 1 : 0, id);
+    return this.getModel(id);
+  }
+
+  deleteModel(id: number): boolean {
+    const res = this.db.prepare("DELETE FROM models WHERE id = ?").run(id);
+    return Number(res.changes) > 0;
+  }
+
+  private toModel(row: Record<string, unknown>): ModelRow {
+    return {
+      id: Number(row.id),
+      publicName: String(row.public_name),
+      channelId: Number(row.channel_id),
+      upstreamName: String(row.upstream_name),
+      enabled: Number(row.enabled) === 1,
+      createdAt: Number(row.created_at),
+    };
+  }
+
+  // ---- api keys (outbound auth) ----
+
+  createApiKey(name: string): ApiKeyRow {
+    const key = `sk-tiny-${randomBytes(24).toString("base64url")}`;
+    const res = this.db
+      .prepare("INSERT INTO api_keys (name, key, enabled, created_at) VALUES (?, ?, 1, ?)")
+      .run(name, key, Date.now());
+    return this.getApiKey(Number(res.lastInsertRowid))!;
+  }
+
+  getApiKey(id: number): ApiKeyRow | null {
+    const row = this.db.prepare("SELECT * FROM api_keys WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toApiKey(row) : null;
+  }
+
+  listApiKeys(): ApiKeyRow[] {
+    const rows = this.db.prepare("SELECT * FROM api_keys ORDER BY id").all() as Record<string, unknown>[];
+    return rows.map((r) => this.toApiKey(r));
+  }
+
+  findApiKeyByKey(key: string): ApiKeyRow | null {
+    const row = this.db.prepare("SELECT * FROM api_keys WHERE key = ?").get(key) as Record<string, unknown> | undefined;
+    return row ? this.toApiKey(row) : null;
+  }
+
+  updateApiKey(id: number, patch: { name?: string; enabled?: boolean }): ApiKeyRow | null {
+    const existing = this.getApiKey(id);
+    if (!existing) return null;
+    const name = patch.name ?? existing.name;
+    const enabled = patch.enabled ?? existing.enabled;
+    this.db.prepare("UPDATE api_keys SET name = ?, enabled = ? WHERE id = ?").run(name, enabled ? 1 : 0, id);
+    return this.getApiKey(id);
+  }
+
+  deleteApiKey(id: number): boolean {
+    const res = this.db.prepare("DELETE FROM api_keys WHERE id = ?").run(id);
+    return Number(res.changes) > 0;
+  }
+
+  private toApiKey(row: Record<string, unknown>): ApiKeyRow {
+    return {
+      id: Number(row.id),
+      name: String(row.name),
+      key: String(row.key),
+      enabled: Number(row.enabled) === 1,
+      createdAt: Number(row.created_at),
+    };
+  }
+
+  // ---- request logs ----
+
+  insertLog(entry: LogEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO request_logs (ts, model, channel_id, api_key_id, status, http_status, latency_ms, error_message)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.ts,
+        entry.model,
+        entry.channelId,
+        entry.apiKeyId,
+        entry.status,
+        entry.httpStatus,
+        entry.latencyMs,
+        entry.errorMessage,
+      );
+    this.db
+      .prepare(`DELETE FROM request_logs WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ${LOG_KEEP})`)
+      .run();
+  }
+
+  recentLogs(limit: number): LogRow[] {
+    const rows = this.db.prepare("SELECT * FROM request_logs ORDER BY id DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: Number(r.id),
+      ts: Number(r.ts),
+      model: String(r.model),
+      channelId: r.channel_id === null ? null : Number(r.channel_id),
+      apiKeyId: r.api_key_id === null ? null : Number(r.api_key_id),
+      status: String(r.status) as "ok" | "error",
+      httpStatus: r.http_status === null ? null : Number(r.http_status),
+      latencyMs: r.latency_ms === null ? null : Number(r.latency_ms),
+      errorMessage: r.error_message === null ? null : String(r.error_message),
+    }));
+  }
+}
