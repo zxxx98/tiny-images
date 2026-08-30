@@ -3,3 +3,4 @@ dist/
 data/
 web/dist/
 *.log
+web/.impeccable/
