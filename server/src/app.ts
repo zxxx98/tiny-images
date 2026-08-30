@@ -14,6 +14,7 @@ import { makeRequireAdmin, makeRequireApiKey } from "./server/auth.js";
 import { registerV1 } from "./server/v1.js";
 import { registerAdmin } from "./server/admin.js";
 import { registerFiles } from "./server/files.js";
+import type { JobManager } from "./server/jobs.js";
 
 export interface AppDeps {
   env: Env;
@@ -22,6 +23,7 @@ export interface AppDeps {
   keyPool: KeyPool;
   provider: ImageProvider;
   executor: Executor;
+  jobManager: JobManager;
   logger?: boolean;
   webDist?: string | null;
 }
@@ -44,6 +46,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(multipart, {
     limits: { fileSize: 50 * 1024 * 1024, files: 6 },
   });
+
+  // 带 content-type: application/json 但无 body 的请求按 {} 解析，
+  // 避免 Fastify 默认的 "Body cannot be empty when content-type is set" 报错
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body: string, done) => {
+      if (body === undefined || body.trim() === "") return done(null, {});
+      try {
+        done(null, JSON.parse(body));
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
 
   const requireApiKey = makeRequireApiKey({ repo: deps.repo, adminToken: deps.env.adminToken });
   const requireAdmin = makeRequireAdmin({ repo: deps.repo, adminToken: deps.env.adminToken });
@@ -69,6 +86,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setNotFoundHandler((req, reply) => {
     const url = req.raw.url ?? "/";
+    // /admin 是前端 SPA 路由，浏览器直达/刷新时回落到 index.html；其余 API 前缀保持 JSON 404
+    if (req.method === "GET" && (url === "/admin" || url === "/admin/") && hasWeb) {
+      reply.type("text/html").sendFile("index.html");
+      return;
+    }
     if (API_PREFIXES.some((p) => url === p || url.startsWith(`${p}/`) || url.startsWith(`${p}?`))) {
       reply.code(404).send({ error: { message: `not found: ${req.method} ${url}`, type: "invalid_request_error", code: null } });
       return;

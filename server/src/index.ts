@@ -8,6 +8,7 @@ import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
 import { Repo } from "./store/repo.js";
 import { seedIfEmpty } from "./store/seed.js";
+import { JobManager } from "./server/jobs.js";
 import path from "node:path";
 
 const env = loadEnv();
@@ -19,6 +20,11 @@ const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
 const provider = new OpenAICompatProvider();
 const executor = new Executor({ router, keyPool, provider, repo });
+const jobManager = new JobManager();
+
+// 内存 job 随进程消失，遗留的 pending 历史记录标记为失败
+const restarted = repo.failPendingGenerations("server restarted");
+if (restarted > 0) console.info(`marked ${restarted} pending generations as failed (server restarted)`);
 
 const app = await buildApp({
   env,
@@ -27,6 +33,7 @@ const app = await buildApp({
   keyPool,
   provider,
   executor,
+  jobManager,
   logger: true,
   webDist: path.resolve(import.meta.dirname, "../../web/dist"),
 });

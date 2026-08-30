@@ -105,8 +105,26 @@ export class OpenAICompatProvider implements ImageProvider {
     const timeout = AbortSignal.timeout(Math.min(channel.timeoutMs, 15_000));
     try {
       const headers: Record<string, string> = { ...channel.extraHeaders };
+      // A bodyless GET with content-type: application/json makes gateways reject
+      // with "Body cannot be empty when content-type is set"; drop it.
+      delete headers["content-type"];
+      delete headers["Content-Type"];
+      delete headers["content-length"];
+      delete headers["Content-Length"];
       if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-      const res = await fetch(joinUrl(channel.baseUrl, "/models"), { headers, signal: timeout });
+      const url = joinUrl(channel.baseUrl, "/models");
+      let res = await fetch(url, { headers, signal: timeout });
+      if (!res.ok) {
+        // Some gateways only accept POST on /models (or force JSON body parsing
+        // even on GET); retry with a minimal JSON body.
+        await res.body?.cancel();
+        res = await fetch(url, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: "{}",
+          signal: timeout,
+        });
+      }
       if (res.ok) return { ok: true, message: `HTTP ${res.status}` };
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
       return { ok: false, message: body?.error?.message ?? `HTTP ${res.status}` };

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
 import { conformImages } from "../media/b64cache.js";
+import { localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
 import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
@@ -101,6 +102,56 @@ export function registerGenerations(ctx: AppContext): void {
     if (stream) {
       return streamImageFlow(ctx, req, reply, model, "generate", genReq, fileBaseUrlFor(ctx, req));
     }
-    return finishSync(ctx, req, reply, model, "generate", genReq);
+    const started = Date.now();
+    try {
+      const body = await finishSync(ctx, req, reply, model, "generate", genReq);
+      await recordGeneration(ctx, req, model, genReq, "ok", Date.now() - started, null, await extractHistoryImages(ctx, body));
+      return body;
+    } catch (err) {
+      await recordGeneration(ctx, req, model, genReq, "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
+      throw err;
+    }
   });
+}
+
+// 兼容端点同样进历史：从响应里提取图片并本地化落盘（失败忽略该张）
+async function extractHistoryImages(ctx: AppContext, body: Record<string, unknown>): Promise<{ file: string; revisedPrompt?: string }[]> {
+  const out: { file: string; revisedPrompt?: string }[] = [];
+  const items = (body.data as Record<string, unknown>[] | undefined) ?? [];
+  for (const item of items) {
+    const url = typeof item.url === "string" ? item.url : undefined;
+    const b64 = typeof item.b64_json === "string" ? item.b64_json : undefined;
+    const revisedPrompt = typeof item.revised_prompt === "string" ? item.revised_prompt : undefined;
+    const saved = await localizeImage(ctx.deps.env.dataDir, { b64, url }, 30_000);
+    if (saved) out.push({ file: saved.file, ...(revisedPrompt !== undefined ? { revisedPrompt } : {}) });
+  }
+  return out;
+}
+
+async function recordGeneration(
+  ctx: AppContext,
+  req: FastifyRequest,
+  model: string,
+  genReq: UnifiedGenRequest,
+  status: "ok" | "error",
+  latencyMs: number,
+  errorMessage: string | null,
+  images: { file: string; revisedPrompt?: string }[],
+): Promise<void> {
+  try {
+    ctx.deps.repo.insertGeneration({
+      createdAt: Date.now(),
+      apiKeyId: req.callerApiKeyId ?? null,
+      model,
+      prompt: genReq.prompt,
+      params: JSON.stringify({ n: genReq.n, size: genReq.size, quality: genReq.quality, responseFormat: genReq.responseFormat }),
+      status,
+      channelId: null,
+      latencyMs,
+      errorMessage,
+      images: JSON.stringify(images),
+    });
+  } catch {
+    // 历史落库失败不影响响应
+  }
 }
