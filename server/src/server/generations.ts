@@ -73,16 +73,16 @@ export async function finishSync(
   kind: "generate" | "edit",
   payload: UnifiedPayload,
 ): Promise<unknown> {
+  const routeOpts = {
+    callerApiKeyId: req.callerApiKeyId ?? null,
+    callerUserId: req.callerUserId ?? null,
+    allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
+    signal: requestSignal(req, reply),
+  };
   const r =
     kind === "generate"
-      ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, {
-          callerApiKeyId: req.callerApiKeyId ?? null,
-          signal: requestSignal(req, reply),
-        })
-      : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, {
-          callerApiKeyId: req.callerApiKeyId ?? null,
-          signal: requestSignal(req, reply),
-        });
+      ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, routeOpts)
+      : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, routeOpts);
   const images = await conformImages({
     images: r.result.images,
     wanted: payload.responseFormat,

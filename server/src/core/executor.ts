@@ -1,4 +1,4 @@
-import { ModelNotFoundError, UpstreamError } from "./errors.js";
+import { ModelNotFoundError, QuotaError, UpstreamError } from "./errors.js";
 import type { KeyPool } from "./keyPool.js";
 import type { ModelRouter } from "./router.js";
 import type {
@@ -20,6 +20,8 @@ export interface ExecutorDeps {
 
 export interface ExecutorOptions {
   callerApiKeyId: number | null;
+  callerUserId?: number | null;
+  allowedChannelIds?: number[] | null;
   signal?: AbortSignal;
 }
 
@@ -47,9 +49,17 @@ export class Executor {
     payload: { kind: "generate"; req: UnifiedGenRequest } | { kind: "edit"; req: UnifiedEditRequest },
     opts: ExecutorOptions,
   ): Promise<ExecutorResult> {
-    const route = this.deps.router.resolve(publicName);
+    const route = this.deps.router.resolve(publicName, opts.allowedChannelIds ?? null);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
+
+    // 额度：仅普通用户且配置了 quota_total 时生效；按成功生成的图片张数扣减
+    const user = opts.callerUserId ? this.deps.repo.getUser(opts.callerUserId) : null;
+    const quotaLimited = !!user && user.role !== "admin" && user.quotaTotal !== null;
+    if (quotaLimited) {
+      const wanted = "n" in payload.req && typeof payload.req.n === "number" ? payload.req.n : 1;
+      if (user!.quotaTotal! - user!.quotaUsed < wanted) throw new QuotaError();
+    }
 
     const start = Date.now();
     const attempted = new Set<number>();
@@ -73,6 +83,10 @@ export class Executor {
             ? await this.deps.provider.generate(payload.req, ctx)
             : await this.deps.provider.edit(payload.req, ctx);
         this.deps.keyPool.markSuccess(key.keyId);
+        if (quotaLimited) {
+          const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
+          if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
+        }
         const latencyMs = Date.now() - start;
         this.log(publicName, channel.id, opts.callerApiKeyId, "ok", 200, latencyMs, null);
         return { result, channel, latencyMs };

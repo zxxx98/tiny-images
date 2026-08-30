@@ -59,10 +59,15 @@ async function runJob(
   genReq: UnifiedGenRequest,
   apiKeyId: number | null,
   generationId: number,
+  routeOpts: { callerUserId: number | null; allowedChannelIds: number[] | null },
 ): Promise<void> {
   const started = Date.now();
   try {
-    const r = await ctx.deps.executor.generate(model, genReq, { callerApiKeyId: apiKeyId });
+    const r = await ctx.deps.executor.generate(model, genReq, {
+      callerApiKeyId: apiKeyId,
+      callerUserId: routeOpts.callerUserId,
+      allowedChannelIds: routeOpts.allowedChannelIds,
+    });
     const images: { file: string; revisedPrompt?: string }[] = [];
     for (const img of r.result.images) {
       const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
@@ -104,7 +109,10 @@ export function registerHistory(ctx: AppContext): void {
       images: "[]",
     });
     const job = ctx.deps.jobManager.create({ apiKeyId, generationId, model, prompt: genReq.prompt });
-    void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId);
+    void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId, {
+      callerUserId: req.callerUserId ?? null,
+      allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
+    });
     return (reply as FastifyReply).code(200).send({ jobId: job.id });
   });
 

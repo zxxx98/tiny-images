@@ -24,6 +24,13 @@ export class ModelNotFoundError extends Error {
   }
 }
 
+export class QuotaError extends Error {
+  constructor() {
+    super("quota exceeded");
+    this.name = "QuotaError";
+  }
+}
+
 export interface OpenAIErrorBody {
   error: { message: string; type: string; code: string | null };
 }
@@ -37,6 +44,9 @@ export function toOpenAIError(err: unknown): { status: number; body: OpenAIError
   }
   if (err instanceof ModelNotFoundError) {
     return { status: 404, body: { error: { message: err.message, type: "invalid_request_error", code: "model_not_found" } } };
+  }
+  if (err instanceof QuotaError) {
+    return { status: 402, body: { error: { message: err.message, type: "insufficient_quota", code: "quota_exceeded" } } };
   }
   if (err instanceof Error && typeof (err as { statusCode?: unknown }).statusCode === "number") {
     const status = (err as unknown as { statusCode: number }).statusCode;

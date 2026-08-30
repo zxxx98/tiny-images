@@ -9,7 +9,7 @@ type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest;
 
 export async function streamImageFlow(
   ctx: AppContext,
-  req: { callerApiKeyId?: number | null },
+  req: { callerApiKeyId?: number | null; callerUserId?: number | null },
   reply: Parameters<typeof sseReply>[0],
   model: string,
   kind: "generate" | "edit",
@@ -17,19 +17,25 @@ export async function streamImageFlow(
   fileBaseUrl: string,
 ): Promise<void> {
   // 路由错误发生在流开始前，仍以 JSON 错误返回
-  const route = ctx.deps.router.resolve(model);
+  const allowedChannelIds = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
+  const route = ctx.deps.router.resolve(model, allowedChannelIds);
   if (!route) throw new ModelNotFoundError(model);
 
   reply.hijack();
   const writer = sseReply(reply);
   const stopHeartbeat = writer.startHeartbeat(() => writer.send({ type: "progress", message: "generating" }));
   writer.send({ type: "status", stage: "submitted" });
+  const routeOpts = {
+    callerApiKeyId: req.callerApiKeyId ?? null,
+    callerUserId: req.callerUserId ?? null,
+    allowedChannelIds,
+  };
   const callerApiKeyId = req.callerApiKeyId ?? null;
   try {
     const r =
       kind === "generate"
-        ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, { callerApiKeyId })
-        : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, { callerApiKeyId });
+        ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, routeOpts)
+        : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, routeOpts);
     const images = await conformImages({
       images: r.result.images,
       wanted: payload.responseFormat,
