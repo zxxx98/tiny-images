@@ -46,7 +46,8 @@ jobs:
           cp server/package.json ci-dist/server/package.json
           cp -r node_modules ci-dist/node_modules
           # 版本冲突的依赖可能嵌套装在 workspace 内（如 @fastify/static），一并拷贝
-          if [ -d server/node_modules ]; then cp -r server/node_modules ci-dist/server/node_modules; fi
+          # 注意：目标是已存在目录，必须用 /. 形式拷"内容"，否则会多套一层 node_modules
+          if [ -d server/node_modules ]; then cp -r server/node_modules/. ci-dist/server/node_modules/; fi
           cp -r server/dist/* ci-dist/server-dist/
           cp -r web/dist/* ci-dist/web-dist/
           tar -czf ci-dist.tgz -C ci-dist .
