@@ -73,3 +73,20 @@ describe("saveGeneratedImage + sweepExpired", () => {
     expect(sweepExpired(dir, 24 * 3600_000)).toBe(0);
   });
 });
+
+describe("localizeImage", () => {
+  it("saves b64, downloads url, returns null on missing/failed content", async () => {
+    const { localizeImage } = await import("../src/media/b64cache.js");
+    const fromB64 = await localizeImage(dir, { b64: PNG_B64 }, 1000);
+    expect(fromB64?.file).toMatch(/\.png$/);
+    expect(fs.existsSync(path.join(dir, "generated", fromB64!.file))).toBe(true);
+
+    const b = await start();
+    upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000);
+    expect(fromUrl?.file).toMatch(/\.png$/);
+
+    expect(await localizeImage(dir, {}, 1000)).toBeNull();
+    expect(await localizeImage(dir, { url: `${b}/img.png` }, 1000)).toBeNull();
+  });
+});
