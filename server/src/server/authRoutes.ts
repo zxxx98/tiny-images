@@ -7,6 +7,22 @@ import { requireBody, requireStr } from "./admin.js";
 export function registerAuthRoutes(ctx: AppContext, jwtSecret: string): void {
   const repo = ctx.deps.repo;
 
+  // ---- 首次设置（users 表为空时可用，无需登录）----
+
+  ctx.app.get("/admin/auth/setup", async () => ({ needed: repo.listUsers().length === 0 }));
+
+  ctx.app.post("/admin/auth/setup", async (req, reply) => {
+    if (repo.listUsers().length > 0) throw httpError(409, "admin account already exists");
+    const b = requireBody(req);
+    const email = requireStr(b, "email").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw httpError(400, "'email' must be a valid email address");
+    const password = requireStr(b, "password");
+    if (password.length < 6) throw httpError(400, "'password' must be at least 6 characters");
+    const user = repo.createUser({ email, passwordHash: hashPassword(password), role: "admin", quotaTotal: null });
+    const token = signJwt({ uid: user.id, role: user.role }, jwtSecret, 7 * 24 * 3600);
+    return await reply.code(201).send({ token, role: user.role, email: user.email });
+  });
+
   ctx.app.post("/admin/auth/login", async (req) => {
     const b = requireBody(req);
     const email = requireStr(b, "email").trim().toLowerCase();

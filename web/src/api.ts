@@ -38,6 +38,24 @@ export function fetchMe(): Promise<Me> {
   return api<Me>("/admin/auth/me");
 }
 
+export async function fetchSetupNeeded(): Promise<boolean> {
+  const res = await fetch("/admin/auth/setup");
+  const parsed = (await res.json().catch(() => ({}))) as { needed?: boolean };
+  return !!parsed.needed;
+}
+
+// 首次设置 admin：成功即视为已登录（服务端直接返回 token）
+export async function setupAdmin(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+  const res = await fetch("/admin/auth/setup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
+  if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });
+  return { token: parsed.token, role: parsed.role!, email: parsed.email! };
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

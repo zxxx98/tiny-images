@@ -19,10 +19,9 @@ afterEach(() => {
 });
 
 describe("seedAdminIfEmpty", () => {
-  it("requires ADMIN_EMAIL/ADMIN_PASSWORD when table empty", () => {
-    expect(() => seedAdminIfEmpty(repo, {})).toThrow(/ADMIN_EMAIL/);
-    expect(() => seedAdminIfEmpty(repo, { adminEmail: "a@x.com" })).toThrow(/ADMIN_EMAIL/);
-    expect(() => seedAdminIfEmpty(repo, { adminPassword: "pw" })).toThrow(/ADMIN_EMAIL/);
+  it("skips silently when env vars are not set (web /setup flow handles it)", () => {
+    expect(seedAdminIfEmpty(repo, {})).toEqual({ created: false, email: "", password: null });
+    expect(seedAdminIfEmpty(repo, { adminEmail: "a@x.com" })).toEqual({ created: false, email: "", password: null });
     expect(repo.listUsers()).toHaveLength(0);
   });
   it("creates admin from ADMIN_EMAIL/ADMIN_PASSWORD", () => {

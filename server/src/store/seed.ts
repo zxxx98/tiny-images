@@ -43,11 +43,8 @@ export function seedAdminIfEmpty(
   env: { adminEmail?: string | null; adminPassword?: string | null },
 ): { created: boolean; email: string; password: string | null } {
   if (repo.listUsers().length > 0) return { created: false, email: "", password: null };
-  if (!env.adminEmail || !env.adminPassword) {
-    throw new Error(
-      "no users exist yet: set ADMIN_EMAIL and ADMIN_PASSWORD environment variables to create the initial admin account on first start",
-    );
-  }
+  // 未设置环境变量时不报错：由 Web 端 /setup 设置页引导创建初始 admin
+  if (!env.adminEmail || !env.adminPassword) return { created: false, email: "", password: null };
   const email = env.adminEmail.toLowerCase();
   repo.createUser({ email, passwordHash: hashPassword(env.adminPassword), role: "admin", quotaTotal: null });
   return { created: true, email, password: null };

@@ -1,19 +1,20 @@
 import { Component, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { api, clearToken, fetchMe, getRole, getToken, setRole, type Me } from "./api";
+import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, setRole, type Me } from "./api";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
 import Login from "./pages/Login";
 import Playground from "./pages/Playground";
+import Setup from "./pages/Setup";
 
-function RequireToken({ children }: { children: React.ReactElement }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+function RequireToken({ children, setupNeeded }: { children: React.ReactElement; setupNeeded: boolean }) {
+  if (!getToken()) return <Navigate to={setupNeeded ? "/setup" : "/login"} replace />;
   return children;
 }
 
-function RequireAdmin({ children }: { children: React.ReactElement }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+function RequireAdmin({ children, setupNeeded }: { children: React.ReactElement; setupNeeded: boolean }) {
+  if (!getToken()) return <Navigate to={setupNeeded ? "/setup" : "/login"} replace />;
   if (getRole() !== "admin") return <Navigate to="/" replace />;
   return children;
 }
@@ -68,9 +69,18 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [me, setMe] = useState<Me | null>(null);
+  const [setupNeeded, setSetupNeeded] = useState(false);
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] ?? "tiny-images"} · tiny-images 95`;
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (getToken()) return;
+    // 未登录时探测是否需要首次设置 admin
+    fetchSetupNeeded()
+      .then(setSetupNeeded)
+      .catch(() => setSetupNeeded(false));
   }, [location.pathname]);
 
   useEffect(() => {
@@ -147,11 +157,12 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/setup" element={<Setup />} />
             <Route path="/guide" element={<Guide />} />
             <Route
               path="/"
               element={
-                <RequireToken>
+                <RequireToken setupNeeded={setupNeeded}>
                   <Playground />
                 </RequireToken>
               }
@@ -159,7 +170,7 @@ export default function App() {
             <Route
               path="/history"
               element={
-                <RequireToken>
+                <RequireToken setupNeeded={setupNeeded}>
                   <History />
                 </RequireToken>
               }
@@ -167,7 +178,7 @@ export default function App() {
             <Route
               path="/admin"
               element={
-                <RequireAdmin>
+                <RequireAdmin setupNeeded={setupNeeded}>
                   <Admin />
                 </RequireAdmin>
               }

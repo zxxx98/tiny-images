@@ -86,6 +86,40 @@ describe("GET /admin/auth/me", () => {
   });
 });
 
+describe("first-run setup", () => {
+  it("needed=true when no users, create admin, then needed=false", async () => {
+    // 本测试文件 beforeEach 已建了两个用户 → 走新建库验证
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "su-"));
+    const repo2 = new Repo(openDb(dir2));
+    const provider = new OpenAICompatProvider();
+    const router = new ModelRouter(repo2);
+    const keyPool = new KeyPool(repo2);
+    const app2 = await buildApp({
+      env: { port: 0, dataDir: dir2, publicBaseUrl: null },
+      repo: repo2, router, keyPool, provider,
+      executor: new Executor({ router, keyPool, provider, repo2 }),
+      logger: false, webDist: null,
+    });
+    try {
+      const s1 = await app2.inject({ url: "/admin/auth/setup" });
+      expect(s1.json().needed).toBe(true);
+      const created = await app2.inject({ method: "POST", url: "/admin/auth/setup", payload: { email: "first@x.com", password: "secret1" } });
+      expect(created.statusCode).toBe(201);
+      const body = created.json();
+      expect(body.role).toBe("admin");
+      // 创建后：needed=false、重复创建 409、返回的 token 直接可用
+      expect((await app2.inject({ url: "/admin/auth/setup" })).json().needed).toBe(false);
+      expect((await app2.inject({ method: "POST", url: "/admin/auth/setup", payload: { email: "x@x.com", password: "secret1" } })).statusCode).toBe(409);
+      expect((await app2.inject({ url: "/admin/auth/me", headers: { authorization: `Bearer ${body.token}` } })).statusCode).toBe(200);
+      expect((await app2.inject({ method: "POST", url: "/admin/auth/setup", payload: { email: "bad", password: "secret1" } })).statusCode).toBe(409);
+    } finally {
+      await app2.close();
+      repo2.close();
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("role guard", () => {
   it("user JWT cannot call admin API", async () => {
     const { json } = await login("u@x.com", "user-pass");
