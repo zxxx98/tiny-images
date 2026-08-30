@@ -6,7 +6,7 @@ interface ModelsResponse {
   data: { id: string }[];
 }
 
-const SIZE_PRESETS = ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "1792x1024", "1024x1792", "512x512", "256x256"];
+const SIZE_PRESETS = ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x1152", "1152x2048", "2048x2048", "1792x1024", "1024x1792", "512x512", "256x256"];
 
 const JOB_KEY = "tiny-running-job";
 const DRAFT_KEY = "tiny-playground-draft";
