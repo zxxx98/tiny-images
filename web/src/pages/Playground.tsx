@@ -1,20 +1,21 @@
-import { FormEvent, useEffect, useState } from "react";
-import { api, getToken } from "../api";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { api, createJob, fetchJob, ApiError } from "../api";
 
 interface ModelsResponse {
   data: { id: string }[];
 }
 
-interface GenResult {
-  created: number;
-  data: { b64_json?: string; url?: string; revised_prompt?: string }[];
-  usage?: unknown;
-}
+const JOB_KEY = "tiny-running-job";
+const DRAFT_KEY = "tiny-playground-draft";
 
-function imageUrl(item: { b64_json?: string; url?: string }): string | null {
-  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
-  if (item.url) return item.url;
-  return null;
+interface Draft {
+  model?: string;
+  prompt?: string;
+  n?: number;
+  size?: string;
+  responseFormat?: string;
+  extra?: string;
 }
 
 export default function Playground() {
@@ -24,7 +25,6 @@ export default function Playground() {
   const [n, setN] = useState(1);
   const [size, setSize] = useState("auto");
   const [responseFormat, setResponseFormat] = useState("");
-  const [stream, setStream] = useState(false);
   const [extra, setExtra] = useState("{}");
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -32,18 +32,55 @@ export default function Playground() {
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
+  const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedRef = useRef(0);
+  const location = useLocation();
 
   useEffect(() => {
     api<ModelsResponse>("/v1/models")
       .then((r) => {
         setModels(r.data.map((m) => m.id));
-        if (r.data.length > 0) setModel(r.data[0].id);
+        if (r.data.length > 0) setModel((cur) => cur || r.data[0].id);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
+  // 恢复草稿、导航带入的参数（历史页「重新生成」），以及未完成的生成 job
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}") as Draft;
+      const fromNav = (location.state ?? null) as { prompt?: string; model?: string; size?: string } | null;
+      if (fromNav?.prompt) setPrompt(fromNav.prompt);
+      else if (draft.prompt) setPrompt(draft.prompt);
+      if (fromNav?.model) setModel(fromNav.model);
+      else if (draft.model) setModel(draft.model);
+      if (fromNav?.size) setSize(fromNav.size);
+      if (draft.n) setN(draft.n);
+      if (draft.responseFormat) setResponseFormat(draft.responseFormat);
+      if (draft.extra) setExtra(draft.extra);
+    } catch {
+      // 草稿损坏则忽略
+    }
+    const jobId = localStorage.getItem(JOB_KEY);
+    if (jobId) {
+      startedRef.current = Date.now();
+      setRunning(true);
+      pollJob(jobId);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 表单草稿持久化，切走再回来不丢输入
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ model, prompt, n, size, responseFormat, extra }));
+  }, [model, prompt, n, size, responseFormat, extra]);
+
   const buildPayload = (): Record<string, unknown> | null => {
-    const payload: Record<string, unknown> = { model, prompt, n, stream };
+    const payload: Record<string, unknown> = { model, prompt, n };
     if (size && size !== "auto") payload.size = size;
     if (responseFormat) payload.response_format = responseFormat;
     try {
@@ -55,111 +92,93 @@ export default function Playground() {
     }
   };
 
+  const stopPolling = (): void => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  // 每 1s 轮询 job 状态；job 挂在服务端，切走页面再回来也能继续等
+  const pollJob = (jobId: string): void => {
+    const tick = async (): Promise<void> => {
+      try {
+        const job = await fetchJob(jobId);
+        setChannel(job.channel);
+        setStatus(job.progress ?? (job.status === "running" ? "生成中…" : null));
+        setImages(job.images.map((i) => i.url));
+        setRevisedPrompts(job.images.map((i) => i.revisedPrompt).filter((v): v is string => !!v));
+        if (job.status === "running") return;
+        stopPolling();
+        localStorage.removeItem(JOB_KEY);
+        setElapsed(job.latencyMs);
+        setRunning(false);
+        if (job.status === "error") setError(job.error ?? "生成失败");
+      } catch (err) {
+        stopPolling();
+        localStorage.removeItem(JOB_KEY);
+        setRunning(false);
+        if (err instanceof ApiError && err.status === 404) {
+          setError("任务已丢失（服务重启或任务过期），可到历史页查看结果");
+        } else {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    };
+    void tick();
+    stopPolling();
+    timerRef.current = setInterval(() => void tick(), 1000);
+  };
+
   const run = async (e: FormEvent) => {
     e.preventDefault();
+    if (running) return;
     setError(null);
     setImages([]);
+    setRevisedPrompts([]);
     setChannel(null);
     setStatus(null);
     setElapsed(null);
     const payload = buildPayload();
     if (!payload) return;
-    const started = Date.now();
+    startedRef.current = Date.now();
     setRunning(true);
     try {
-      if (stream) {
-        await runStream(payload, started);
-      } else {
-        await runSync(payload, started);
-      }
+      const { jobId } = await createJob(payload);
+      localStorage.setItem(JOB_KEY, jobId);
+      pollJob(jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setRunning(false);
     }
   };
 
-  const handleResponse = (res: Response, started: number): Promise<void> => {
-    setElapsed(Date.now() - started);
-    setChannel(res.headers.get("x-tiny-channel"));
-    if (!res.ok) {
-      return res
-        .json()
-        .catch(() => ({}))
-        .then((body: { error?: { message?: string } }) => {
-          throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
-        });
-    }
-    return res.json().then((body: GenResult) => {
-      setImages(body.data.map(imageUrl).filter((v): v is string => !!v));
-    });
+  const cancel = (): void => {
+    // 放弃轮询；服务端任务自然结束并写入历史
+    stopPolling();
+    localStorage.removeItem(JOB_KEY);
+    setRunning(false);
+    setStatus("已取消（任务结果仍会进入历史）");
   };
 
-  const runSync = async (payload: Record<string, unknown>, started: number): Promise<void> => {
-    const res = await fetch("/v1/images/generations", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify(payload),
-    });
-    await handleResponse(res, started);
-  };
-
-  const runStream = async (payload: Record<string, unknown>, started: number): Promise<void> => {
-    const res = await fetch("/v1/images/generations", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok || !res.body) {
-      await handleResponse(res, started);
-      return;
+  const quickSubmit = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.closest("form")?.requestSubmit();
     }
-    setChannel(res.headers.get("x-tiny-channel"));
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    const collected: string[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const frames = buf.split("\n\n");
-      buf = frames.pop() ?? "";
-      for (const frame of frames) {
-        if (!frame.startsWith("data: ")) continue;
-        const data = frame.slice(6);
-        if (data === "[DONE]") continue;
-        let ev: { type: string; message?: string; error?: { message?: string }; b64_json?: string; url?: string };
-        try {
-          ev = JSON.parse(data);
-        } catch {
-          continue;
-        }
-        if (ev.type === "image") {
-          const src = ev.b64_json ? `data:image/png;base64,${ev.b64_json}` : (ev.url ?? null);
-          if (src) {
-            collected.push(src);
-            setImages([...collected]);
-          }
-        } else if (ev.type === "progress") {
-          setStatus(ev.message ?? "生成中…");
-        } else if (ev.type === "error") {
-          throw new Error(ev.error?.message ?? "上游错误");
-        }
-      }
-    }
-    setElapsed(Date.now() - started);
   };
 
   return (
     <div className="two-col">
       <form className="card" onSubmit={run}>
         <h2>Playground</h2>
-        <label>模型</label>
+        <label htmlFor="pg-model">模型</label>
         {models.length === 0 ? (
-          <p className="muted">没有可用模型，请先在管理后台配置渠道与映射。</p>
+          <p className="muted">
+            没有可用模型，请先到 <Link to="/admin">管理后台</Link> 配置渠道与映射。
+          </p>
         ) : (
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
+          <select id="pg-model" value={model} onChange={(e) => setModel(e.target.value)}>
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -167,35 +186,75 @@ export default function Playground() {
             ))}
           </select>
         )}
-        <label>Prompt</label>
-        <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="描述你想生成的图片…" required />
+        <label htmlFor="pg-prompt">Prompt（Ctrl+Enter 生成）</label>
+        <textarea
+          id="pg-prompt"
+          rows={4}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={quickSubmit}
+          placeholder="描述你想生成的图片…"
+          required
+        />
         <div className="row">
           <div>
-            <label>数量 n</label>
-            <input type="number" min={1} max={10} value={n} onChange={(e) => setN(Number(e.target.value))} />
+            <label htmlFor="pg-n">数量 n</label>
+            <input
+              id="pg-n"
+              type="number"
+              min={1}
+              max={10}
+              value={n}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setN(Number.isFinite(v) ? Math.min(10, Math.max(1, Math.round(v))) : 1);
+              }}
+            />
           </div>
           <div>
-            <label>尺寸</label>
-            <input value={size} onChange={(e) => setSize(e.target.value)} placeholder="auto / 1024x1024" />
+            <label htmlFor="pg-size">尺寸</label>
+            <input id="pg-size" list="pg-size-options" value={size} onChange={(e) => setSize(e.target.value)} placeholder="auto" />
+            <datalist id="pg-size-options">
+              <option value="1024x1024" />
+              <option value="1536x1024" />
+              <option value="1024x1536" />
+              <option value="512x512" />
+              <option value="256x256" />
+            </datalist>
           </div>
         </div>
-        <label>response_format</label>
-        <select value={responseFormat} onChange={(e) => setResponseFormat(e.target.value)}>
+        <label htmlFor="pg-rf">response_format</label>
+        <select id="pg-rf" value={responseFormat} onChange={(e) => setResponseFormat(e.target.value)}>
           <option value="">跟随上游</option>
           <option value="url">url</option>
           <option value="b64_json">b64_json</option>
         </select>
-        <label className="check">
-          <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} /> 流式（SSE）
-        </label>
         <details>
           <summary className="muted">高级参数（JSON，透传上游）</summary>
-          <textarea rows={3} value={extra} onChange={(e) => setExtra(e.target.value)} spellCheck={false} />
+          <textarea
+            aria-label="高级参数 JSON"
+            rows={3}
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            onKeyDown={quickSubmit}
+            spellCheck={false}
+          />
         </details>
-        <button className="btn primary" type="submit" disabled={running || !model || !prompt}>
-          {running ? "生成中…" : "生成"}
-        </button>
-        {error && <div className="error">{error}</div>}
+        <div className="row">
+          <button className="btn primary" type="submit" disabled={running || !model || !prompt}>
+            {running ? "生成中…" : "生成"}
+          </button>
+          {running && (
+            <button className="btn ghost" type="button" onClick={cancel}>
+              取消
+            </button>
+          )}
+        </div>
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
       </form>
 
       <div className="card">
@@ -203,15 +262,48 @@ export default function Playground() {
         <div className="meta">
           {channel && <span className="pill">渠道: {channel}</span>}
           {elapsed !== null && <span className="pill">{elapsed} ms</span>}
-          {status && !running && <span className="pill">{status}</span>}
-          {running && <span className="pill pulse">生成中…</span>}
+          {status && <span className="pill">{status}</span>}
+          {running && !status && (
+            <span className="pill hourglass">
+              <span aria-hidden="true" className="hourglass-icon">⌛</span>
+              生成中
+            </span>
+          )}
         </div>
-        {images.length === 0 && !running && <p className="muted">尚无结果</p>}
+        {images.length === 0 && !running && <p className="muted">尚无结果。在左侧填写 Prompt 后点「生成」。</p>}
         <div className="gallery">
           {images.map((src, i) => (
-            <img key={i} src={src} alt={`result-${i}`} />
+            <figure key={i} className="shot">
+              <img src={src} alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`} />
+              <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
+                下载
+              </a>
+            </figure>
           ))}
+          {running &&
+            Array.from({ length: Math.max(0, n - images.length) }, (_, i) => (
+              <figure key={`pending-${i}`} className="shot">
+                <div className="loading-tile" role="status" aria-label="图片生成中">
+                  <span className="loading-label">正在生成…</span>
+                  <span className="w95-progress" aria-hidden="true">
+                    <span className="w95-progress-blocks" />
+                  </span>
+                </div>
+              </figure>
+            ))}
         </div>
+        {revisedPrompts.length > 0 && (
+          <details>
+            <summary className="muted">详情（revised_prompt）</summary>
+            <div className="result-details">
+              {revisedPrompts.map((rp, i) => (
+                <p key={i} className="muted">
+                  revised_prompt：{rp}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   );
