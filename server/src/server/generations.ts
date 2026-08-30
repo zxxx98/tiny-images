@@ -142,6 +142,7 @@ async function recordGeneration(
     ctx.deps.repo.insertGeneration({
       createdAt: Date.now(),
       apiKeyId: req.callerApiKeyId ?? null,
+      userId: req.callerUserId ?? null,
       model,
       prompt: genReq.prompt,
       params: JSON.stringify({ n: genReq.n, size: genReq.size, quality: genReq.quality, responseFormat: genReq.responseFormat }),

@@ -31,6 +31,7 @@ export async function streamImageFlow(
     allowedChannelIds,
   };
   const callerApiKeyId = req.callerApiKeyId ?? null;
+  const callerUserId = req.callerUserId ?? null;
   try {
     const r =
       kind === "generate"
@@ -45,14 +46,14 @@ export async function streamImageFlow(
     });
     images.forEach((img, index) => writer.send({ type: "image", index, ...toDataItem(img) }));
     writer.send({ type: "completed", ...toImagesResponse(r.result, images) });
-    await recordStreamGeneration(ctx, callerApiKeyId, model, payload, "ok", r.channel.id, r.latencyMs, null, images);
+    await recordStreamGeneration(ctx, callerApiKeyId, callerUserId, model, payload, "ok", r.channel.id, r.latencyMs, null, images);
     stopHeartbeat();
     writer.end();
   } catch (err) {
     stopHeartbeat();
     const { body } = toOpenAIError(err);
     writer.send({ type: "error", error: body.error });
-    await recordStreamGeneration(ctx, callerApiKeyId, model, payload, "error", null, null, body.error?.message ?? "upstream error", []);
+    await recordStreamGeneration(ctx, callerApiKeyId, callerUserId, model, payload, "error", null, null, body.error?.message ?? "upstream error", []);
     writer.abort();
   }
 }
@@ -61,6 +62,7 @@ export async function streamImageFlow(
 async function recordStreamGeneration(
   ctx: AppContext,
   callerApiKeyId: number | null,
+  callerUserId: number | null,
   model: string,
   payload: UnifiedPayload,
   status: "ok" | "error",
@@ -81,6 +83,7 @@ async function recordStreamGeneration(
     ctx.deps.repo.insertGeneration({
       createdAt: Date.now(),
       apiKeyId: callerApiKeyId,
+      userId: callerUserId,
       model,
       prompt: (payload as UnifiedGenRequest).prompt,
       params: JSON.stringify({ n: payload.n, size: payload.size, quality: (payload as UnifiedGenRequest).quality, responseFormat: payload.responseFormat }),

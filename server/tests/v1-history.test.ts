@@ -85,7 +85,7 @@ describe("POST /v1/images/jobs", () => {
     expect(images[0].url).toMatch(/\/files\/[0-9a-f]{32}\.png$/);
     expect(images[0].revisedPrompt).toBe("rev");
     expect(fs.existsSync(path.join(dir, "generated", images[0].file))).toBe(true);
-    const rows = repo.listGenerations(apiKeyId, null, 10);
+    const rows = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10);
     expect(rows[0].status).toBe("ok");
     expect(rows[0].prompt).toBe("cat");
     expect(JSON.parse(rows[0].images)[0].file).toBe(images[0].file);
@@ -108,15 +108,15 @@ describe("POST /v1/images/jobs", () => {
     const body = await waitJob(jobId);
     expect(body.status).toBe("error");
     expect(body.error).toContain("boom");
-    expect(repo.listGenerations(apiKeyId, null, 10)[0].status).toBe("error");
+    expect(repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0].status).toBe("error");
   });
 });
 
 describe("GET /v1/history", () => {
   it("lists generations with file urls, key-filtered, cursor pagination", async () => {
     await start();
-    repo.insertGeneration({ createdAt: 1, apiKeyId, model: "m", prompt: "p1", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: JSON.stringify([{ file: "a.png" }]) });
-    repo.insertGeneration({ createdAt: 2, apiKeyId: apiKeyId + 999, model: "m", prompt: "p2", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    repo.insertGeneration({ createdAt: 1, apiKeyId, userId: null, model: "m", prompt: "p1", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: JSON.stringify([{ file: "a.png" }]) });
+    repo.insertGeneration({ createdAt: 2, apiKeyId: apiKeyId + 999, userId: null, model: "m", prompt: "p2", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
     const res = await app.inject({ method: "GET", url: "/v1/history?limit=1", headers: auth() });
     expect(res.statusCode).toBe(200);
     const page1 = res.json();
@@ -125,6 +125,39 @@ describe("GET /v1/history", () => {
     expect(page1.items[0].images[0].url).toMatch(/\/files\/a\.png$/);
     const page2 = (await app.inject({ method: "GET", url: `/v1/history?limit=1&before=${page1.items[0].id}`, headers: auth() })).json();
     expect(page2.items).toHaveLength(0);
+  });
+
+  it("user identity sees own keys' records + own web calls, not others; admin sees all", async () => {
+    await start();
+    const hash = (await import("../src/core/password.js")).hashPassword;
+    const u1 = repo.createUser({ email: "u1@x.com", passwordHash: hash("pw-123456"), role: "user", quotaTotal: 100 });
+    const u2 = repo.createUser({ email: "u2@x.com", passwordHash: hash("pw-123456"), role: "user", quotaTotal: 100 });
+    // u1 名下的 key 与网页调用、别人的记录
+    const u1key = repo.createApiKey("u1-k", u1.id);
+    repo.insertGeneration({ createdAt: 1, apiKeyId: u1key.id, userId: null, model: "m", prompt: "u1-key", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    repo.insertGeneration({ createdAt: 2, apiKeyId: null, userId: u1.id, model: "m", prompt: "u1-web", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    repo.insertGeneration({ createdAt: 3, apiKeyId: null, userId: u2.id, model: "m", prompt: "u2-web", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    repo.insertGeneration({ createdAt: 4, apiKeyId: apiKeyId, userId: null, model: "m", prompt: "unbound", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+
+    const login = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email: "u1@x.com", password: "pw-123456" } });
+    const u1h = { authorization: `Bearer ${(login.json() as { token: string }).token}` };
+    const prompts = (await app.inject({ url: "/v1/history", headers: u1h })).json().items.map((r: { prompt: string }) => r.prompt).sort();
+    expect(prompts).toEqual(["u1-key", "u1-web"]);
+
+    // admin JWT 看到全部（含无主记录）
+    repo.createUser({ email: "admin@local", passwordHash: hash("pw-123456"), role: "admin", quotaTotal: null });
+    const alogin = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email: "admin@local", password: "pw-123456" } });
+    const ah = { authorization: `Bearer ${(alogin.json() as { token: string }).token}` };
+    const all = (await app.inject({ url: "/v1/history", headers: ah })).json().items.map((r: { prompt: string }) => r.prompt).sort();
+    expect(all).toEqual(["u1-key", "u1-web", "u2-web", "unbound"]);
+
+    // 绑定 key 的调用也按用户身份过滤（该用户名下所有 key）
+    const bound = (await app.inject({ url: "/v1/history", headers: { authorization: `Bearer ${u1key.key}` } })).json().items.map((r: { prompt: string }) => r.prompt).sort();
+    expect(bound).toEqual(["u1-key", "u1-web"]);
+
+    // 无主 key 只看无主记录
+    const unboundRows = (await app.inject({ url: "/v1/history", headers: auth() })).json().items.map((r: { prompt: string }) => r.prompt);
+    expect(unboundRows).toEqual(["unbound"]);
   });
 });
 
@@ -138,7 +171,7 @@ describe("POST /v1/images/generations records history", () => {
     await start();
     const res = await app.inject({ method: "POST", url: "/v1/images/generations", headers: auth(), payload: { model: "img-1", prompt: "cat", response_format: "url" } });
     expect(res.statusCode).toBe(200);
-    const rows = repo.listGenerations(apiKeyId, null, 10);
+    const rows = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10);
     expect(rows[0].status).toBe("ok");
     const img = JSON.parse(rows[0].images)[0];
     expect(img.file).toMatch(/\.png$/);

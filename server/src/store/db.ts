@@ -95,6 +95,10 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
   `,
+  `
+  ALTER TABLE generations ADD COLUMN user_id INTEGER;
+  CREATE INDEX IF NOT EXISTS generations_user ON generations(user_id);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

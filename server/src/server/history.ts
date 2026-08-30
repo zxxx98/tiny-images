@@ -96,9 +96,11 @@ export function registerHistory(ctx: AppContext): void {
   ctx.app.post("/v1/images/jobs", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { model, req: genReq } = validateGenBody(req.body);
     const apiKeyId = req.callerApiKeyId ?? null;
+    const userId = req.callerUserId ?? null;
     const generationId = ctx.deps.repo.insertGeneration({
       createdAt: Date.now(),
       apiKeyId,
+      userId,
       model,
       prompt: genReq.prompt,
       params: genParams(genReq),
@@ -133,7 +135,12 @@ export function registerHistory(ctx: AppContext): void {
       before = Number.parseInt(q.before, 10);
       if (Number.isNaN(before)) throw new ValidationError("'before' must be an integer id");
     }
-    const rows = ctx.deps.repo.listGenerations(req.callerApiKeyId ?? null, before, limit);
+    const viewer = {
+      admin: req.callerRole === "admin",
+      userId: req.callerUserId ?? null,
+      apiKeyId: req.callerApiKeyId ?? null,
+    };
+    const rows = ctx.deps.repo.listGenerations(viewer, before, limit);
     return { items: rows.map((r) => serializeRow(ctx, req, r)) };
   });
 }

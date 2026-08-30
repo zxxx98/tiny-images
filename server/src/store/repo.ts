@@ -58,6 +58,7 @@ export interface LogRow extends LogEntry {
 export interface GenerationEntry {
   createdAt: number;
   apiKeyId: number | null;
+  userId: number | null;
   model: string;
   prompt: string;
   params: string;
@@ -66,6 +67,14 @@ export interface GenerationEntry {
   latencyMs: number | null;
   errorMessage: string | null;
   images: string;
+}
+
+// 历史可见性：admin → 全部；有用户身份（JWT 或绑定 key）→ 该用户名下所有 key + 本人网页调用；
+// 无主 key / 匿名 → 仅该 key 自己（或 apiKeyId 为空）的记录
+export interface GenerationViewer {
+  admin: boolean;
+  userId: number | null;
+  apiKeyId: number | null;
 }
 
 export interface GenerationRow extends GenerationEntry {
@@ -416,10 +425,10 @@ export class Repo {
   insertGeneration(e: GenerationEntry): number {
     const res = this.db
       .prepare(
-        `INSERT INTO generations (created_at, api_key_id, model, prompt, params, status, channel_id, latency_ms, error_message, images)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO generations (created_at, api_key_id, user_id, model, prompt, params, status, channel_id, latency_ms, error_message, images)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(e.createdAt, e.apiKeyId, e.model, e.prompt, e.params, e.status, e.channelId, e.latencyMs, e.errorMessage, e.images);
+      .run(e.createdAt, e.apiKeyId, e.userId, e.model, e.prompt, e.params, e.status, e.channelId, e.latencyMs, e.errorMessage, e.images);
     return Number(res.lastInsertRowid);
   }
 
@@ -441,14 +450,30 @@ export class Repo {
       .run(merged.status, merged.channelId ?? null, merged.latencyMs ?? null, merged.errorMessage ?? null, merged.images, id);
   }
 
-  listGenerations(apiKeyId: number | null, before: number | null, limit: number): GenerationRow[] {
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM generations
-         WHERE (? IS NULL OR api_key_id = ?) AND (? IS NULL OR id < ?)
-         ORDER BY id DESC LIMIT ?`,
-      )
-      .all(apiKeyId, apiKeyId, before, before, limit) as Record<string, unknown>[];
+  listGenerations(viewer: GenerationViewer, before: number | null, limit: number): GenerationRow[] {
+    let rows: Record<string, unknown>[];
+    if (viewer.admin) {
+      rows = this.db
+        .prepare(`SELECT * FROM generations WHERE (? IS NULL OR id < ?) ORDER BY id DESC LIMIT ?`)
+        .all(before, before, limit) as Record<string, unknown>[];
+    } else if (viewer.userId !== null) {
+      rows = this.db
+        .prepare(
+          `SELECT * FROM generations
+           WHERE (user_id = ? OR api_key_id IN (SELECT id FROM api_keys WHERE user_id = ?))
+             AND (? IS NULL OR id < ?)
+           ORDER BY id DESC LIMIT ?`,
+        )
+        .all(viewer.userId, viewer.userId, before, before, limit) as Record<string, unknown>[];
+    } else {
+      rows = this.db
+        .prepare(
+          `SELECT * FROM generations
+           WHERE (? IS NULL OR api_key_id = ?) AND (? IS NULL OR id < ?)
+           ORDER BY id DESC LIMIT ?`,
+        )
+        .all(viewer.apiKeyId, viewer.apiKeyId, before, before, limit) as Record<string, unknown>[];
+    }
     return rows.map((r) => this.toGeneration(r));
   }
 
@@ -464,6 +489,7 @@ export class Repo {
       id: Number(r.id),
       createdAt: Number(r.created_at),
       apiKeyId: r.api_key_id === null ? null : Number(r.api_key_id),
+      userId: r.user_id === null || r.user_id === undefined ? null : Number(r.user_id),
       model: String(r.model),
       prompt: String(r.prompt),
       params: String(r.params),
