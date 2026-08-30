@@ -1,32 +1,41 @@
 import { FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, type ApiKey, type Channel, type ChannelKey, type LogRow, type ModelMapping } from "../api";
 
 type Tab = "channels" | "models" | "keys" | "logs";
 
+const TABS: [Tab, string][] = [
+  ["channels", "渠道"],
+  ["models", "模型映射"],
+  ["keys", "API Keys"],
+  ["logs", "请求日志"],
+];
+
 const fmtTime = (ts: number): string => new Date(ts).toLocaleString();
 
 export default function Admin() {
-  const [tab, setTab] = useState<Tab>("channels");
+  const [sp, setSp] = useSearchParams();
+  const raw = sp.get("tab");
+  const tab: Tab = TABS.some(([id]) => id === raw) ? (raw as Tab) : "channels";
+  const switchTab = (id: Tab): void => {
+    setSp(id === "channels" ? {} : { tab: id }, { replace: true });
+  };
+
   return (
     <div className="admin">
-      <div className="tabs">
-        {(
-          [
-            ["channels", "渠道"],
-            ["models", "模型映射"],
-            ["keys", "API Keys"],
-            ["logs", "请求日志"],
-          ] as [Tab, string][]
-        ).map(([id, label]) => (
-          <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
+      <div className="tabs" role="tablist" aria-label="管理后台分区">
+        {TABS.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => switchTab(id)}>
             {label}
           </button>
         ))}
       </div>
-      {tab === "channels" && <ChannelsTab />}
-      {tab === "models" && <ModelsTab />}
-      {tab === "keys" && <ApiKeysTab />}
-      {tab === "logs" && <LogsTab />}
+      <div role="tabpanel">
+        {tab === "channels" && <ChannelsTab />}
+        {tab === "models" && <ModelsTab />}
+        {tab === "keys" && <ApiKeysTab />}
+        {tab === "logs" && <LogsTab />}
+      </div>
     </div>
   );
 }
@@ -36,6 +45,7 @@ export default function Admin() {
 function ChannelsTab() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [editing, setEditing] = useState<Partial<Channel> | null>(null);
+  const [headersText, setHeadersText] = useState("{}");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,12 +56,31 @@ function ChannelsTab() {
   };
   useEffect(load, []);
 
-  const save = async (e: FormEvent) => {
+  // 编辑器里的 Headers 用独立草稿文本，失焦/保存时才解析，避免输入过程被重置
+  const openEdit = (c: Partial<Channel> | null): void => {
+    const target = c ?? { editMode: "auto", timeoutMs: 120000, enabled: true };
+    setEditing(target);
+    setHeadersText(JSON.stringify(target.extraHeaders ?? {}));
+  };
+
+  const save = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (!editing) return;
     setError(null);
+    let extraHeaders: Record<string, string> = {};
+    const rawText = headersText.trim();
+    if (rawText && rawText !== "{}") {
+      try {
+        const parsed: unknown = JSON.parse(rawText);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        extraHeaders = parsed as Record<string, string>;
+      } catch {
+        setError('额外 Headers 不是合法的 JSON 对象，例如 {"x-foo":"bar"}');
+        return;
+      }
+    }
     try {
-      const body = { ...editing, extraHeaders: safeParseHeaders(editing.extraHeaders) };
+      const body = { ...editing, extraHeaders };
       if (editing.id) await api(`/admin/channels/${editing.id}`, { method: "PATCH", body });
       else await api("/admin/channels", { method: "POST", body });
       setEditing(null);
@@ -89,6 +118,7 @@ function ChannelsTab() {
     load();
   };
   const removeKey = async (keyId: number): Promise<void> => {
+    if (!confirm("确认删除该上游 key？")) return;
     await api(`/admin/keys/${keyId}`, { method: "DELETE" });
     load();
   };
@@ -99,36 +129,55 @@ function ChannelsTab() {
 
   return (
     <div className="card">
-      {msg && <div className="ok">{msg}</div>}
-      {error && <div className="error">{error}</div>}
-      <button className="btn primary" onClick={() => setEditing({ editMode: "auto", timeoutMs: 120000, enabled: true })}>
+      {msg && (
+        <div className="ok" role="status">
+          {msg}
+        </div>
+      )}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
+      <button className="btn primary" onClick={() => openEdit(null)}>
         新建渠道
       </button>
       {editing && (
         <form className="inline-form" onSubmit={save}>
           <h3>{editing.id ? "编辑渠道" : "新建渠道"}</h3>
-          <input placeholder="名称" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
+          <label htmlFor="ch-name">名称</label>
+          <input id="ch-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
+          <label htmlFor="ch-base-url">Base URL</label>
           <input
-            placeholder="Base URL (https://api.openai.com/v1)"
+            id="ch-base-url"
+            placeholder="https://api.openai.com/v1"
             value={editing.baseUrl ?? ""}
             onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
             required
           />
+          <label htmlFor="ch-timeout">超时（毫秒）</label>
           <input
+            id="ch-timeout"
             type="number"
-            placeholder="超时 ms"
+            min={1000}
+            step={1000}
             value={editing.timeoutMs ?? 120000}
             onChange={(e) => setEditing({ ...editing, timeoutMs: Number(e.target.value) })}
           />
-          <select value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
-            <option value="auto">edits: auto（自动回退）</option>
-            <option value="multipart">edits: multipart</option>
-            <option value="json-base64">edits: json-base64</option>
+          <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
+          <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
+            <option value="auto">auto（自动回退）</option>
+            <option value="multipart">multipart（标准表单上传）</option>
+            <option value="json-base64">json-base64（JSON + base64 图片）</option>
           </select>
-          <input
-            placeholder='额外 Headers JSON，如 {"x-foo":"bar"}'
-            value={JSON.stringify(editing.extraHeaders ?? {})}
-            onChange={(e) => setEditing({ ...editing, extraHeaders: safeParseHeaders(e.target.value as unknown as Record<string, string>) })}
+          <label htmlFor="ch-headers">额外 Headers（JSON，可选）</label>
+          <textarea
+            id="ch-headers"
+            className="mono"
+            rows={2}
+            value={headersText}
+            onChange={(e) => setHeadersText(e.target.value)}
+            placeholder='{"x-foo":"bar"}'
             spellCheck={false}
           />
           <label className="check">
@@ -144,7 +193,7 @@ function ChannelsTab() {
           </div>
         </form>
       )}
-      {channels.length === 0 && <p className="muted">还没有渠道。</p>}
+      {channels.length === 0 && <p className="muted">还没有渠道。点击「新建渠道」添加上游生图服务，然后为它录入 apiKey。</p>}
       {channels.map((c) => (
         <div key={c.id} className="entity">
           <div className="entity-head">
@@ -155,7 +204,7 @@ function ChannelsTab() {
             <button className="btn small" onClick={() => testChannel(c.id)}>
               测试连通性
             </button>
-            <button className="btn small" onClick={() => setEditing(c)}>
+            <button className="btn small" onClick={() => openEdit(c)}>
               编辑
             </button>
             <button className="btn small" onClick={() => toggle(c)}>
@@ -173,7 +222,7 @@ function ChannelsTab() {
                   {k.enabled ? "停用" : "启用"}
                 </button>
                 <button className="link danger" onClick={() => removeKey(k.id)}>
-                  删
+                  删除
                 </button>
               </span>
             ))}
@@ -187,26 +236,22 @@ function ChannelsTab() {
 
 function KeyInput({ onAdd }: { onAdd: (key: string) => void }) {
   const [value, setValue] = useState("");
+  const add = (): void => {
+    onAdd(value);
+    setValue("");
+  };
   return (
     <span className="key-input">
       <input
+        aria-label="添加上游 apiKey"
         placeholder="添加上游 apiKey…"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            onAdd(value);
-            setValue("");
-          }
+          if (e.key === "Enter") add();
         }}
       />
-      <button
-        className="btn small"
-        onClick={() => {
-          onAdd(value);
-          setValue("");
-        }}
-      >
+      <button className="btn small" onClick={add}>
         添加
       </button>
     </span>
@@ -214,21 +259,8 @@ function KeyInput({ onAdd }: { onAdd: (key: string) => void }) {
 }
 
 function maskKey(key: string): string {
-  if (key.length <= 12) return key;
-  return `${key.slice(0, 8)}…${key.slice(-4)}`;
-}
-
-function safeParseHeaders(v: unknown): Record<string, string> {
-  if (typeof v === "string") {
-    try {
-      const parsed = JSON.parse(v || "{}");
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, string>;
-    } catch {
-      /* 输入未完成时保持 {} */
-    }
-    return {};
-  }
-  return (v as Record<string, string>) ?? {};
+  if (key.length <= 10) return `${key.slice(0, 2)}…${key.slice(-2)}`;
+  return `${key.slice(0, 6)}…${key.slice(-4)}`;
 }
 
 // ---- 模型映射 ----
@@ -259,17 +291,30 @@ function ModelsTab() {
     }
   };
 
+  const remove = async (id: number): Promise<void> => {
+    if (!confirm("确认删除该模型映射？删除后外部将无法再调用这个 model 名。")) return;
+    await api(`/admin/models/${id}`, { method: "DELETE" });
+    load();
+  };
+
   return (
     <div className="card">
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       <button className="btn primary" onClick={() => setEditing({ enabled: true })} disabled={channels.length === 0}>
         新建映射
       </button>
+      {channels.length === 0 && <p className="muted">还没有渠道。请先在「渠道」页添加并启用一个渠道，再建立模型映射。</p>}
       {editing && (
         <form className="inline-form" onSubmit={save}>
           <h3>{editing.id ? "编辑映射" : "新建映射"}</h3>
-          <input placeholder="对外 model 名" value={editing.publicName ?? ""} onChange={(e) => setEditing({ ...editing, publicName: e.target.value })} required />
-          <select value={editing.channelId ?? ""} onChange={(e) => setEditing({ ...editing, channelId: Number(e.target.value) })} required>
+          <label htmlFor="m-public">对外 model 名（调用方使用）</label>
+          <input id="m-public" value={editing.publicName ?? ""} onChange={(e) => setEditing({ ...editing, publicName: e.target.value })} required />
+          <label htmlFor="m-channel">渠道</label>
+          <select id="m-channel" value={editing.channelId ?? ""} onChange={(e) => setEditing({ ...editing, channelId: Number(e.target.value) })} required>
             <option value="" disabled>
               选择渠道…
             </option>
@@ -279,7 +324,8 @@ function ModelsTab() {
               </option>
             ))}
           </select>
-          <input placeholder="上游 model 名（默认同对外名）" value={editing.upstreamName ?? ""} onChange={(e) => setEditing({ ...editing, upstreamName: e.target.value })} />
+          <label htmlFor="m-upstream">上游 model 名（留空则同对外名）</label>
+          <input id="m-upstream" value={editing.upstreamName ?? ""} onChange={(e) => setEditing({ ...editing, upstreamName: e.target.value })} />
           <label className="check">
             <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
           </label>
@@ -294,43 +340,39 @@ function ModelsTab() {
         </form>
       )}
       {models.length === 0 && <p className="muted">还没有模型映射。</p>}
-      <table>
-        <thead>
-          <tr>
-            <th>对外 model</th>
-            <th>渠道</th>
-            <th>上游 model</th>
-            <th>状态</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((m) => (
-            <tr key={m.id}>
-              <td className="mono">{m.publicName}</td>
-              <td>{m.channelName ?? m.channelId}</td>
-              <td className="mono">{m.upstreamName}</td>
-              <td>
-                <span className={`pill ${m.enabled ? "" : "off"}`}>{m.enabled ? "启用" : "停用"}</span>
-              </td>
-              <td>
-                <button className="btn small" onClick={() => setEditing(m)}>
-                  编辑
-                </button>{" "}
-                <button
-                  className="btn small danger"
-                  onClick={async () => {
-                    await api(`/admin/models/${m.id}`, { method: "DELETE" });
-                    load();
-                  }}
-                >
-                  删除
-                </button>
-              </td>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>对外 model</th>
+              <th>渠道</th>
+              <th>上游 model</th>
+              <th>状态</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {models.map((m) => (
+              <tr key={m.id}>
+                <td className="mono">{m.publicName}</td>
+                <td>{m.channelName ?? m.channelId}</td>
+                <td className="mono">{m.upstreamName}</td>
+                <td>
+                  <span className={`pill ${m.enabled ? "" : "off"}`}>{m.enabled ? "启用" : "停用"}</span>
+                </td>
+                <td>
+                  <button className="btn small" onClick={() => setEditing(m)}>
+                    编辑
+                  </button>{" "}
+                  <button className="btn small danger" onClick={() => remove(m.id)}>
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -341,6 +383,7 @@ function ApiKeysTab() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState("");
   const [created, setCreated] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = (): void => {
@@ -351,6 +394,7 @@ function ApiKeysTab() {
   const create = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
+    setCopied(false);
     try {
       const k = await api<ApiKey>("/admin/api-keys", { method: "POST", body: { name } });
       setCreated(k.key);
@@ -361,68 +405,86 @@ function ApiKeysTab() {
     }
   };
 
+  const copyCreated = async (): Promise<void> => {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* 剪贴板不可用（如非安全上下文）时保持按钮原样 */
+    }
+  };
+
   return (
     <div className="card">
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       {created && (
-        <div className="ok">
+        <div className="ok" role="status">
           新 key（仅显示一次，请立即复制）：<code className="mono">{created}</code>{" "}
-          <button className="btn small" onClick={() => navigator.clipboard.writeText(created)}>
-            复制
+          <button className="btn small" onClick={copyCreated}>
+            {copied ? "已复制 ✓" : "复制"}
           </button>
         </div>
       )}
       <form className="row" onSubmit={create}>
-        <input placeholder="key 名称" value={name} onChange={(e) => setName(e.target.value)} required />
+        <label htmlFor="ak-name">Key 名称</label>
+        <input id="ak-name" placeholder="如 my-app-prod" value={name} onChange={(e) => setName(e.target.value)} required />
         <button className="btn primary" type="submit">
           生成新 Key
         </button>
       </form>
       {keys.length === 0 && <p className="muted">还没有 API Key。未配置任何 key 时 /v1 接口不启用鉴权。</p>}
-      <table>
-        <thead>
-          <tr>
-            <th>名称</th>
-            <th>Key</th>
-            <th>状态</th>
-            <th>创建时间</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {keys.map((k) => (
-            <tr key={k.id}>
-              <td>{k.name}</td>
-              <td className="mono">{maskKey(k.key)}</td>
-              <td>
-                <span className={`pill ${k.enabled ? "" : "off"}`}>{k.enabled ? "启用" : "停用"}</span>
-              </td>
-              <td className="muted">{fmtTime(k.createdAt)}</td>
-              <td>
-                <button
-                  className="btn small"
-                  onClick={async () => {
-                    await api(`/admin/api-keys/${k.id}`, { method: "PATCH", body: { enabled: !k.enabled } });
-                    load();
-                  }}
-                >
-                  {k.enabled ? "停用" : "启用"}
-                </button>{" "}
-                <button
-                  className="btn small danger"
-                  onClick={async () => {
-                    if (!confirm("确认删除该 key？")) return;
-                    await api(`/admin/api-keys/${k.id}`, { method: "DELETE" });
-                    load();
-                  }}
-                >
-                  删除
-                </button>
-              </td>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>Key</th>
+              <th>状态</th>
+              <th>创建时间</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k.id}>
+                <td>{k.name}</td>
+                <td className="mono">{maskKey(k.key)}</td>
+                <td>
+                  <span className={`pill ${k.enabled ? "" : "off"}`}>{k.enabled ? "启用" : "停用"}</span>
+                </td>
+                <td className="muted">{fmtTime(k.createdAt)}</td>
+                <td>
+                  <button
+                    className="btn small"
+                    onClick={async () => {
+                      await api(`/admin/api-keys/${k.id}`, { method: "PATCH", body: { enabled: !k.enabled } });
+                      load();
+                    }}
+                  >
+                    {k.enabled ? "停用" : "启用"}
+                  </button>{" "}
+                  <button
+                    className="btn small danger"
+                    onClick={async () => {
+                      if (!confirm("确认删除该 key？使用它的客户端将立即失去访问权限。")) return;
+                      await api(`/admin/api-keys/${k.id}`, { method: "DELETE" });
+                      load();
+                    }}
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -431,48 +493,68 @@ function ApiKeysTab() {
 
 function LogsTab() {
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
     const load = (): void => {
+      // 后台标签页不轮询，回到前台后由下一次定时器接管
+      if (document.visibilityState === "hidden") return;
       api<LogRow[]>("/admin/logs?limit=50")
-        .then(setLogs)
-        .catch(() => undefined);
+        .then((rows) => {
+          if (!alive) return;
+          setLogs(rows);
+          setError(null);
+        })
+        .catch((e) => {
+          if (alive) setError(e instanceof Error ? e.message : String(e));
+        });
     };
     load();
     const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, []);
 
   return (
     <div className="card">
       <p className="muted">最近 50 条请求，每 5 秒自动刷新。</p>
-      {logs.length === 0 && <p className="muted">暂无请求记录。</p>}
-      <table>
-        <thead>
-          <tr>
-            <th>时间</th>
-            <th>model</th>
-            <th>状态</th>
-            <th>HTTP</th>
-            <th>耗时</th>
-            <th>错误</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.map((l) => (
-            <tr key={l.id}>
-              <td className="muted">{fmtTime(l.ts)}</td>
-              <td className="mono">{l.model}</td>
-              <td>
-                <span className={`pill ${l.status === "ok" ? "" : "off"}`}>{l.status}</span>
-              </td>
-              <td>{l.httpStatus ?? "-"}</td>
-              <td>{l.latencyMs !== null ? `${l.latencyMs} ms` : "-"}</td>
-              <td className="error-cell">{l.errorMessage ?? ""}</td>
+      {error && (
+        <div className="error" role="status">
+          日志加载失败：{error}（将自动重试）
+        </div>
+      )}
+      {logs.length === 0 && !error && <p className="muted">暂无请求记录。发起一次生成后这里会出现调用日志。</p>}
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>model</th>
+              <th>状态</th>
+              <th>HTTP</th>
+              <th>耗时</th>
+              <th>错误</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {logs.map((l) => (
+              <tr key={l.id}>
+                <td className="muted">{fmtTime(l.ts)}</td>
+                <td className="mono">{l.model}</td>
+                <td>
+                  <span className={`pill ${l.status === "ok" ? "" : "error"}`}>{l.status}</span>
+                </td>
+                <td>{l.httpStatus ?? "-"}</td>
+                <td>{l.latencyMs !== null ? `${l.latencyMs} ms` : "-"}</td>
+                <td className="error-cell">{l.errorMessage ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
