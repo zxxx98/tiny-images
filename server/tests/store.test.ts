@@ -89,3 +89,24 @@ describe("logs", () => {
     expect(logs[0].ts).toBe(1004);
   });
 });
+
+describe("generations", () => {
+  it("insert/complete/list cursor pagination, key-filtered, failPending", () => {
+    const a = repo.createApiKey("k1");
+    const id1 = repo.insertGeneration({ createdAt: 1, apiKeyId: a.id, model: "m", prompt: "p1", params: "{}", status: "pending", channelId: null, latencyMs: null, errorMessage: null, images: "[]" });
+    const id2 = repo.insertGeneration({ createdAt: 2, apiKeyId: a.id, model: "m", prompt: "p2", params: "{}", status: "ok", channelId: 1, latencyMs: 5, errorMessage: null, images: '[{"file":"a.png"}]' });
+    repo.completeGeneration(id1, { status: "ok", channelId: 1, latencyMs: 9, images: '[{"file":"b.png"}]' });
+    const page1 = repo.listGenerations(a.id, null, 1);
+    expect(page1.map((r) => r.id)).toEqual([id2]);
+    expect(page1[0].images).toBe('[{"file":"a.png"}]');
+    const page2 = repo.listGenerations(a.id, id2, 10);
+    expect(page2.map((r) => r.id)).toEqual([id1]);
+    expect(page2[0].status).toBe("ok");
+    expect(page2[0].latencyMs).toBe(9);
+    const b = repo.createApiKey("k2");
+    expect(repo.listGenerations(b.id, null, 10)).toEqual([]);
+    const id3 = repo.insertGeneration({ createdAt: 3, apiKeyId: a.id, model: "m", prompt: "p3", params: "{}", status: "pending", channelId: null, latencyMs: null, errorMessage: null, images: "[]" });
+    expect(repo.failPendingGenerations("server restarted")).toBe(1);
+    expect(repo.listGenerations(a.id, null, 10).find((r) => r.id === id3)?.errorMessage).toBe("server restarted");
+  });
+});

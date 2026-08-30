@@ -371,4 +371,68 @@ export class Repo {
       errorMessage: r.error_message === null ? null : String(r.error_message),
     }));
   }
+
+  // ---- generations（生成历史）----
+
+  insertGeneration(e: GenerationEntry): number {
+    const res = this.db
+      .prepare(
+        `INSERT INTO generations (created_at, api_key_id, model, prompt, params, status, channel_id, latency_ms, error_message, images)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(e.createdAt, e.apiKeyId, e.model, e.prompt, e.params, e.status, e.channelId, e.latencyMs, e.errorMessage, e.images);
+    return Number(res.lastInsertRowid);
+  }
+
+  completeGeneration(
+    id: number,
+    patch: Partial<Pick<GenerationEntry, "status" | "channelId" | "latencyMs" | "errorMessage" | "images">>,
+  ): void {
+    const row = this.db.prepare("SELECT * FROM generations WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return;
+    const merged = {
+      status: patch.status ?? (row.status as string),
+      channelId: "channelId" in patch ? patch.channelId : (row.channel_id as number | null),
+      latencyMs: "latencyMs" in patch ? patch.latencyMs : (row.latency_ms as number | null),
+      errorMessage: "errorMessage" in patch ? patch.errorMessage : (row.error_message as string | null),
+      images: patch.images ?? (row.images as string),
+    };
+    this.db
+      .prepare(`UPDATE generations SET status = ?, channel_id = ?, latency_ms = ?, error_message = ?, images = ? WHERE id = ?`)
+      .run(merged.status, merged.channelId, merged.latencyMs, merged.errorMessage, merged.images, id);
+  }
+
+  listGenerations(apiKeyId: number | null, before: number | null, limit: number): GenerationRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM generations
+         WHERE (? IS NULL OR api_key_id = ?) AND (? IS NULL OR id < ?)
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(apiKeyId, apiKeyId, before, before, limit) as Record<string, unknown>[];
+    return rows.map((r) => this.toGeneration(r));
+  }
+
+  failPendingGenerations(message: string): number {
+    const res = this.db
+      .prepare(`UPDATE generations SET status = 'error', error_message = ? WHERE status = 'pending'`)
+      .run(message);
+    return Number(res.changes);
+  }
+
+  private toGeneration(r: Record<string, unknown>): GenerationRow {
+    return {
+      id: Number(r.id),
+      createdAt: Number(r.created_at),
+      apiKeyId: r.api_key_id === null ? null : Number(r.api_key_id),
+      model: String(r.model),
+      prompt: String(r.prompt),
+      params: String(r.params),
+      status: String(r.status) as GenerationRow["status"],
+      channelId: r.channel_id === null ? null : Number(r.channel_id),
+      latencyMs: r.latency_ms === null ? null : Number(r.latency_ms),
+      errorMessage: r.error_message === null ? null : String(r.error_message),
+      images: String(r.images),
+    };
+  }
 }

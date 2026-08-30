@@ -51,6 +51,22 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS request_logs_ts ON request_logs(ts DESC);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS generations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    api_key_id INTEGER,
+    model TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL,
+    channel_id INTEGER,
+    latency_ms INTEGER,
+    error_message TEXT,
+    images TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE INDEX IF NOT EXISTS generations_cursor ON generations(id DESC);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {
