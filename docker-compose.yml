@@ -5,7 +5,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     volumes:
       - tiny-data:/data

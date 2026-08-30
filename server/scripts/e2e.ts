@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildApp } from "../src/app.js";
 import { Executor } from "../src/core/executor.js";
+import { hashPassword } from "../src/core/password.js";
 import { KeyPool } from "../src/core/keyPool.js";
 import { ModelRouter } from "../src/core/router.js";
 import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
@@ -32,7 +33,7 @@ const provider = new OpenAICompatProvider();
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
 const app = await buildApp({
-  env: { port: 0, dataDir, adminToken: "e2e-admin", publicBaseUrl: null },
+  env: { port: 0, dataDir, publicBaseUrl: null },
   repo,
   router,
   keyPool,
@@ -45,7 +46,16 @@ const app = await buildApp({
 await app.listen({ port: 0, host: "127.0.0.1" });
 const port = (app.server.address() as { port: number }).port;
 const base = `http://127.0.0.1:${port}`;
-const admin = { "content-type": "application/json", authorization: "Bearer e2e-admin" };
+// 创建初始 admin 并用 JWT 作为管理凭证
+repo.createUser({ email: "admin@local", passwordHash: hashPassword("e2e-admin-pass"), role: "admin", quotaTotal: null });
+const loginRes = (await (
+  await fetch(`${base}/admin/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "admin@local", password: "e2e-admin-pass" }),
+  })
+).json()) as { token: string };
+const admin = { "content-type": "application/json", authorization: `Bearer ${loginRes.token}` };
 
 // ---- 通过管理 API 配置 ----
 const ch = await (
@@ -72,7 +82,7 @@ console.log("[e2e] channel:", ch.name, "model mapping:", model.publicName, "->",
 // ---- Playground 风格调用（OpenAI SDK 兼容路径） ----
 const gen = await fetch(`${base}/v1/images/generations`, {
   method: "POST",
-  headers: { "content-type": "application/json", authorization: "Bearer e2e-admin" },
+  headers: { "content-type": "application/json", authorization: `Bearer ${loginRes.token}` },
   body: JSON.stringify({ model: "img-1", prompt: "a white cat", n: 1 }),
 });
 const genBody = (await gen.json()) as { created: number; data: { b64_json: string }[]; usage: { total_tokens: number } };
@@ -80,13 +90,13 @@ console.log("[e2e] generations:", gen.status, "channel:", gen.headers.get("x-tin
 console.assert(gen.status === 200 && genBody.data[0].b64_json === PNG_B64, "generation failed");
 
 // ---- models 列表 ----
-const models = await (await fetch(`${base}/v1/models`, { headers: { authorization: "Bearer e2e-admin" } })).json();
+const models = await (await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${loginRes.token}` } })).json();
 console.log("[e2e] /v1/models:", JSON.stringify(models.data));
 
 // ---- 流式 ----
 const streamRes = await fetch(`${base}/v1/images/generations`, {
   method: "POST",
-  headers: { "content-type": "application/json", authorization: "Bearer e2e-admin" },
+  headers: { "content-type": "application/json", authorization: `Bearer ${loginRes.token}` },
   body: JSON.stringify({ model: "img-1", prompt: "a white cat", stream: true }),
 });
 const streamText = await streamRes.text();

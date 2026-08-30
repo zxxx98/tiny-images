@@ -11,7 +11,7 @@
 - **b64 ↔ url 自动转换**：客户端要的格式与上游返回的不一致时自动转换（b64→url 落盘缓存 24h）
 - **统一错误格式**：所有错误均为 OpenAI 结构 `{"error":{"message","type","code"}}`
 - **WebUI**：Playground + 管理后台（React），由服务端同端口托管
-- **鉴权**：对外 API 用 `sk-tiny-` 前缀 key（未配置任何 key 时不鉴权）；管理接口用 `ADMIN_TOKEN`
+- **鉴权**：对外 API 用 `sk-tiny-` 前缀 key（未配置任何 key 时不鉴权）；Web 登录用邮箱+密码（admin / 普通用户角色，普通用户可配置额度与可用渠道分组）
 - **持久化**：SQLite（Node 内置 `node:sqlite`，无原生编译依赖），配置即数据、改完即生效
 
 ## 快速开始
@@ -19,12 +19,11 @@
 ### Docker（推荐）
 
 ```bash
-docker compose up -d
-# 默认 ADMIN_TOKEN 为 change-me，建议：
-ADMIN_TOKEN=你的管理令牌 docker compose up -d
+# 首次启动必须设置初始管理员账号（仅 users 表为空时生效）
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=你的密码 docker compose up -d
 ```
 
-打开 http://localhost:3000 → 输入 ADMIN_TOKEN 登录 → 「管理后台」建渠道、录 key、建映射 → 回 Playground 出图。
+打开 http://localhost:3000 → 用 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 登录 → 「管理后台」建渠道、录 key、建映射 → 回 Playground 出图。
 
 ### 本地开发
 
@@ -45,7 +44,9 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 |---|---|---|
 | `PORT` | `3000` | 监听端口 |
 | `DATA_DIR` | `./data` | 数据目录（SQLite、生成图缓存、可选 config.yaml） |
-| `ADMIN_TOKEN` | 无 | 管理令牌；未设置时管理 API 仅接受 localhost |
+| `ADMIN_EMAIL` | 无 | 首次启动创建初始 admin 的邮箱（users 表为空时必填，否则拒绝启动） |
+| `ADMIN_PASSWORD` | 无 | 首次启动创建初始 admin 的密码（同上） |
+| `JWT_SECRET` | 自动生成 | 登录 token 签名密钥；默认生成并持久化到 `DATA_DIR/jwt_secret` |
 | `PUBLIC_BASE_URL` | 空 | 生成图对外 URL 的基地址；为空时按请求 Host 推导 |
 
 首次启动若 `DATA_DIR/config.yaml` 存在且数据库为空，会导入种子数据：
@@ -69,7 +70,7 @@ models:
 ```ts
 import OpenAI from "openai";
 
-const client = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: "<sk-tiny-… 或 ADMIN_TOKEN>" });
+const client = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: "<sk-tiny-…>" });
 
 const res = await client.images.generate({
   model: "gpt-image-1",       // 你在管理后台映射的对外名

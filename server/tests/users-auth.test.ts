@@ -14,7 +14,7 @@ import { Repo } from "../src/store/repo.js";
 let dir: string;
 let repo: Repo;
 let app: Awaited<ReturnType<typeof buildApp>>;
-const H = { authorization: "Bearer admin-secret" };
+let H: { authorization: string };
 
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "au-"));
@@ -25,7 +25,7 @@ beforeEach(async () => {
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
   app = await buildApp({
-    env: { port: 0, dataDir: dir, adminToken: "admin-secret", publicBaseUrl: null },
+    env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
@@ -34,6 +34,8 @@ beforeEach(async () => {
     logger: false,
     webDist: null,
   });
+  const login = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email: "admin@local", password: "admin-pass" } });
+  H = { authorization: `Bearer ${(login.json() as { token: string }).token}` };
 });
 afterEach(async () => {
   await app.close();
@@ -74,10 +76,10 @@ describe("GET /admin/auth/me", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ role: "user", email: "u@x.com", quotaTotal: 10, quotaUsed: 0, quotaRemaining: 10 });
   });
-  it("admin token still works", async () => {
+  it("admin JWT me → account info", async () => {
     const res = await app.inject({ url: "/admin/auth/me", headers: H });
     expect(res.statusCode).toBe(200);
-    expect(res.json().role).toBe("admin");
+    expect(res.json()).toMatchObject({ role: "admin", email: "admin@local", quotaRemaining: null });
   });
   it("no token → 401", async () => {
     expect((await app.inject({ url: "/admin/auth/me" })).statusCode).toBe(401);
@@ -107,9 +109,5 @@ describe("PUT /admin/auth/password", () => {
     expect(ok.statusCode).toBe(204);
     expect((await login("u@x.com", "new-pass-1")).status).toBe(200);
     expect((await login("u@x.com", "user-pass")).status).toBe(401);
-  });
-  it("admin-token identity cannot change password", async () => {
-    const res = await app.inject({ method: "PUT", url: "/admin/auth/password", headers: H, payload: { oldPassword: "x", newPassword: "y" } });
-    expect(res.statusCode).toBe(400);
   });
 });

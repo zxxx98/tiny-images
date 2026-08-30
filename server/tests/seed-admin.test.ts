@@ -19,19 +19,18 @@ afterEach(() => {
 });
 
 describe("seedAdminIfEmpty", () => {
-  it("creates admin@local with random password when table empty", () => {
-    const r = seedAdminIfEmpty(repo, {});
-    expect(r.created).toBe(true);
-    expect(r.email).toBe("admin@local");
-    expect(r.password).toMatch(/^[A-Za-z0-9_-]{12}$/);
-    const u = repo.getUserByEmail("admin@local")!;
-    expect(u.role).toBe("admin");
-    expect(verifyPassword(r.password!, u.passwordHash)).toBe(true);
+  it("requires ADMIN_EMAIL/ADMIN_PASSWORD when table empty", () => {
+    expect(() => seedAdminIfEmpty(repo, {})).toThrow(/ADMIN_EMAIL/);
+    expect(() => seedAdminIfEmpty(repo, { adminEmail: "a@x.com" })).toThrow(/ADMIN_EMAIL/);
+    expect(() => seedAdminIfEmpty(repo, { adminPassword: "pw" })).toThrow(/ADMIN_EMAIL/);
+    expect(repo.listUsers()).toHaveLength(0);
   });
-  it("uses ADMIN_EMAIL/ADMIN_PASSWORD when provided", () => {
+  it("creates admin from ADMIN_EMAIL/ADMIN_PASSWORD", () => {
     const r = seedAdminIfEmpty(repo, { adminEmail: "Boss@X.com", adminPassword: "super-secret" });
     expect(r).toEqual({ created: true, email: "boss@x.com", password: null });
-    expect(verifyPassword("super-secret", repo.getUserByEmail("boss@x.com")!.passwordHash)).toBe(true);
+    const u = repo.getUserByEmail("boss@x.com")!;
+    expect(u.role).toBe("admin");
+    expect(verifyPassword("super-secret", u.passwordHash)).toBe(true);
   });
   it("no-op when users exist", () => {
     repo.createUser({ email: "a@x.com", passwordHash: "a:b", role: "user", quotaTotal: 1 });

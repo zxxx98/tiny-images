@@ -66,7 +66,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   );
 
   const jwtSecret = resolveJwtSecret(deps.env.dataDir, deps.env.jwtSecret ?? null);
-  const authDeps = { repo: deps.repo, adminToken: deps.env.adminToken, jwtSecret };
+  const authDeps = { repo: deps.repo, jwtSecret };
   const requireApiKey = makeRequireApiKey(authDeps);
   const requireAdmin = makeRequireAdmin(authDeps);
   const requireUser = makeRequireUser(authDeps);

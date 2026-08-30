@@ -61,7 +61,7 @@ beforeEach(async () => {
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
   app = await buildApp({
-    env: { port: 0, dataDir: dir, adminToken: null, publicBaseUrl: null },
+    env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,

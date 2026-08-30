@@ -14,7 +14,7 @@ import { Repo } from "../src/store/repo.js";
 let dir: string;
 let repo: Repo;
 let app: Awaited<ReturnType<typeof buildApp>>;
-const H = { authorization: "Bearer admin-secret" };
+let H: { authorization: string };
 
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "gua-"));
@@ -24,7 +24,7 @@ beforeEach(async () => {
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
   app = await buildApp({
-    env: { port: 0, dataDir: dir, adminToken: "admin-secret", publicBaseUrl: null },
+    env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
@@ -33,6 +33,8 @@ beforeEach(async () => {
     logger: false,
     webDist: null,
   });
+  const login = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email: "admin@local", password: "admin-pass" } });
+  H = { authorization: `Bearer ${(login.json() as { token: string }).token}` };
 });
 afterEach(async () => {
   await app.close();

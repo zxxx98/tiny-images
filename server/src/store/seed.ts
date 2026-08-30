@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 import { parse } from "yaml";
 import { hashPassword } from "../core/password.js";
 import type { Repo } from "./repo.js";
@@ -44,8 +43,12 @@ export function seedAdminIfEmpty(
   env: { adminEmail?: string | null; adminPassword?: string | null },
 ): { created: boolean; email: string; password: string | null } {
   if (repo.listUsers().length > 0) return { created: false, email: "", password: null };
-  const email = (env.adminEmail ?? "admin@local").toLowerCase();
-  const password = env.adminPassword ?? randomBytes(9).toString("base64url"); // 12 字符
-  repo.createUser({ email, passwordHash: hashPassword(password), role: "admin", quotaTotal: null });
-  return { created: true, email, password: env.adminPassword ? null : password };
+  if (!env.adminEmail || !env.adminPassword) {
+    throw new Error(
+      "no users exist yet: set ADMIN_EMAIL and ADMIN_PASSWORD environment variables to create the initial admin account on first start",
+    );
+  }
+  const email = env.adminEmail.toLowerCase();
+  repo.createUser({ email, passwordHash: hashPassword(env.adminPassword), role: "admin", quotaTotal: null });
+  return { created: true, email, password: null };
 }

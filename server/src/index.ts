@@ -18,11 +18,7 @@ seedIfEmpty(env.dataDir, repo);
 
 const seeded = seedAdminIfEmpty(repo, env);
 if (seeded.created) {
-  if (seeded.password) {
-    console.info(`created initial admin ${seeded.email} with password: ${seeded.password} (change it after first login)`);
-  } else {
-    console.info(`created initial admin ${seeded.email}`);
-  }
+  console.info(`created initial admin ${seeded.email} (from ADMIN_EMAIL/ADMIN_PASSWORD)`);
 }
 
 const router = new ModelRouter(repo);

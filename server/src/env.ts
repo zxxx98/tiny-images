@@ -5,7 +5,6 @@ import { randomBytes } from "node:crypto";
 export interface Env {
   port: number;
   dataDir: string;
-  adminToken: string | null;
   publicBaseUrl: string | null;
   jwtSecret?: string | null;
   adminEmail?: string | null;
@@ -17,7 +16,6 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   return {
     port: Number.isFinite(port) ? port : 3000,
     dataDir: processEnv.DATA_DIR ?? path.resolve("data"),
-    adminToken: processEnv.ADMIN_TOKEN || null,
     publicBaseUrl: processEnv.PUBLIC_BASE_URL || null,
     jwtSecret: processEnv.JWT_SECRET || null,
     adminEmail: processEnv.ADMIN_EMAIL || null,

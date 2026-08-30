@@ -4,7 +4,6 @@ import type { Repo } from "../store/repo.js";
 
 export interface AuthDeps {
   repo: Repo;
-  adminToken: string | null;
   jwtSecret?: string | null;
 }
 
@@ -37,15 +36,10 @@ function userFromJwt(deps: AuthDeps, token: string | null): { uid: number; role:
   return payload ? { uid: payload.uid, role: payload.role } : null;
 }
 
+// /v1 与 /files 的鉴权：JWT 或无主 api_key 均视为不挂靠用户（不限渠道、不计额度）
 export function makeRequireApiKey(deps: AuthDeps) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const token = bearerOf(req);
-    if (deps.adminToken && token === deps.adminToken) {
-      req.callerApiKeyId = null;
-      req.callerUserId = null;
-      req.callerRole = "admin";
-      return;
-    }
     const jwtUser = userFromJwt(deps, token);
     if (jwtUser) {
       const user = deps.repo.getUser(jwtUser.uid);
@@ -84,15 +78,10 @@ export function makeRequireApiKey(deps: AuthDeps) {
   };
 }
 
+// 管理接口仅接受 role=admin 的用户 JWT
 export function makeRequireAdmin(deps: AuthDeps) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const token = bearerOf(req);
-    if (deps.adminToken && token === deps.adminToken) {
-      req.callerUserId = null;
-      req.callerRole = "admin";
-      return;
-    }
-    const jwtUser = userFromJwt(deps, token);
+    const jwtUser = userFromJwt(deps, bearerOf(req));
     if (jwtUser && jwtUser.role === "admin") {
       const user = deps.repo.getUser(jwtUser.uid);
       if (user && user.enabled) {
@@ -107,29 +96,14 @@ export function makeRequireAdmin(deps: AuthDeps) {
       else unauthorized(reply, "user is disabled or deleted");
       return;
     }
-    if (!deps.adminToken) {
-      const ip = req.ip ?? "";
-      const loopback = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
-      if (loopback) return;
-      reply.code(401).send({
-        error: { message: "ADMIN_TOKEN not configured; admin API restricted to localhost", type: "invalid_request_error", code: null },
-      });
-      return;
-    }
-    unauthorized(reply, "invalid admin token");
+    unauthorized(reply, "admin authentication required");
   };
 }
 
-// 登录用户自身可用的接口（me / 改密码）。ADMIN_TOKEN 身份 role=admin 但 uid=null。
+// 登录用户自身可用的接口（me / 改密码）
 export function makeRequireUser(deps: AuthDeps) {
   return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const token = bearerOf(req);
-    if (deps.adminToken && token === deps.adminToken) {
-      req.callerUserId = null;
-      req.callerRole = "admin";
-      return;
-    }
-    const jwtUser = userFromJwt(deps, token);
+    const jwtUser = userFromJwt(deps, bearerOf(req));
     if (jwtUser) {
       const user = deps.repo.getUser(jwtUser.uid);
       if (user && user.enabled) {
