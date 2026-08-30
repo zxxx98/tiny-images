@@ -7,12 +7,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-function requireBody(req: { body: unknown }): Record<string, unknown> {
+export function requireBody(req: { body: unknown }): Record<string, unknown> {
   if (!isRecord(req.body)) throw httpError(400, "a JSON object body is required");
   return req.body;
 }
 
-function requireStr(b: Record<string, unknown>, field: string): string {
+export function requireStr(b: Record<string, unknown>, field: string): string {
   const v = b[field];
   if (typeof v !== "string" || !v.trim()) throw httpError(400, `'${field}' is required`);
   return v;

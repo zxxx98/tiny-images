@@ -10,7 +10,9 @@ import type { ImageProvider } from "./core/types.js";
 import type { ModelRouter } from "./core/router.js";
 import { toOpenAIError } from "./core/errors.js";
 import type { Repo } from "./store/repo.js";
-import { makeRequireAdmin, makeRequireApiKey } from "./server/auth.js";
+import { makeRequireAdmin, makeRequireApiKey, makeRequireUser } from "./server/auth.js";
+import { registerAuthRoutes } from "./server/authRoutes.js";
+import { resolveJwtSecret } from "./env.js";
 import { registerV1 } from "./server/v1.js";
 import { registerAdmin } from "./server/admin.js";
 import { registerFiles } from "./server/files.js";
@@ -33,6 +35,7 @@ export interface AppContext {
   deps: AppDeps;
   requireApiKey: ReturnType<typeof makeRequireApiKey>;
   requireAdmin: ReturnType<typeof makeRequireAdmin>;
+  requireUser: ReturnType<typeof makeRequireUser>;
 }
 
 const API_PREFIXES = ["/v1", "/admin", "/files"];
@@ -62,13 +65,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
-  const requireApiKey = makeRequireApiKey({ repo: deps.repo, adminToken: deps.env.adminToken });
-  const requireAdmin = makeRequireAdmin({ repo: deps.repo, adminToken: deps.env.adminToken });
-  const ctx: AppContext = { app, deps, requireApiKey, requireAdmin };
+  const jwtSecret = resolveJwtSecret(deps.env.dataDir, deps.env.jwtSecret ?? null);
+  const authDeps = { repo: deps.repo, adminToken: deps.env.adminToken, jwtSecret };
+  const requireApiKey = makeRequireApiKey(authDeps);
+  const requireAdmin = makeRequireAdmin(authDeps);
+  const requireUser = makeRequireUser(authDeps);
+  const ctx: AppContext = { app, deps, requireApiKey, requireAdmin, requireUser };
 
   app.get("/health", async () => ({ ok: true }));
 
   // 路由注册：
+  registerAuthRoutes(ctx, jwtSecret);
   registerV1(ctx);
   registerAdmin(ctx);
   registerFiles(ctx);
