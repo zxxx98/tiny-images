@@ -33,6 +33,7 @@ export default function Playground() {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
+  const [preview, setPreview] = useState<{ src: string; prompt: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(0);
   const location = useLocation();
@@ -275,7 +276,11 @@ export default function Playground() {
         <div className="gallery">
           {images.map((src, i) => (
             <figure key={i} className="shot">
-              <img src={src} alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`} />
+              <img
+                src={src}
+                alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
+                onClick={() => setPreview({ src, prompt: prompt || `生成结果 ${i + 1}` })}
+              />
               <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
                 下载
               </a>
@@ -306,6 +311,12 @@ export default function Playground() {
           </details>
         )}
       </div>
+      {preview && (
+        <div className="lightbox" role="dialog" onClick={() => setPreview(null)}>
+          <img src={preview.src} alt={preview.prompt} />
+          <p className="mono">{preview.prompt}</p>
+        </div>
+      )}
     </div>
   );
 }
