@@ -1,13 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, type ApiKey, type Channel, type ChannelKey, type LogRow, type ModelMapping } from "../api";
+import { api, type ApiKey, type Channel, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
+import GroupsTab from "./admin/GroupsTab";
+import UsersTab from "./admin/UsersTab";
 
-type Tab = "channels" | "models" | "keys" | "logs";
+type Tab = "channels" | "models" | "keys" | "logs" | "groups" | "users";
 
 const TABS: [Tab, string][] = [
   ["channels", "渠道"],
+  ["groups", "分组"],
   ["models", "模型映射"],
   ["keys", "API Keys"],
+  ["users", "用户"],
   ["logs", "请求日志"],
 ];
 
@@ -32,8 +36,10 @@ export default function Admin() {
       </div>
       <div role="tabpanel">
         {tab === "channels" && <ChannelsTab />}
+        {tab === "groups" && <GroupsTab />}
         {tab === "models" && <ModelsTab />}
         {tab === "keys" && <ApiKeysTab />}
+        {tab === "users" && <UsersTab />}
         {tab === "logs" && <LogsTab />}
       </div>
     </div>
@@ -381,13 +387,18 @@ function ModelsTab() {
 
 function ApiKeysTab() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [users, setUsers] = useState<UserView[]>([]);
   const [name, setName] = useState("");
+  const [userId, setUserId] = useState<string>("");
   const [created, setCreated] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = (): void => {
     api<ApiKey[]>("/admin/api-keys").then(setKeys).catch((e) => setError(e.message));
+    api<UserView[]>("/admin/users")
+      .then((list) => setUsers(list.filter((u) => u.role === "user" && u.enabled)))
+      .catch(() => undefined);
   };
   useEffect(load, []);
 
@@ -396,7 +407,10 @@ function ApiKeysTab() {
     setError(null);
     setCopied(false);
     try {
-      const k = await api<ApiKey>("/admin/api-keys", { method: "POST", body: { name } });
+      const k = await api<ApiKey>("/admin/api-keys", {
+        method: "POST",
+        body: { name, ...(userId ? { userId: Number(userId) } : {}) },
+      });
       setCreated(k.key);
       setName("");
       load();
@@ -434,6 +448,15 @@ function ApiKeysTab() {
       <form className="row" onSubmit={create}>
         <label htmlFor="ak-name">Key 名称</label>
         <input id="ak-name" placeholder="如 my-app-prod" value={name} onChange={(e) => setName(e.target.value)} required />
+        <label htmlFor="ak-user">关联用户（可选）</label>
+        <select id="ak-user" value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <option value="">不关联（不计额度）</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.email}
+            </option>
+          ))}
+        </select>
         <button className="btn primary" type="submit">
           生成新 Key
         </button>
@@ -444,6 +467,7 @@ function ApiKeysTab() {
           <thead>
             <tr>
               <th>名称</th>
+              <th>关联用户</th>
               <th>Key</th>
               <th>状态</th>
               <th>创建时间</th>
@@ -454,6 +478,7 @@ function ApiKeysTab() {
             {keys.map((k) => (
               <tr key={k.id}>
                 <td>{k.name}</td>
+                <td>{k.userEmail ?? <span className="muted">-</span>}</td>
                 <td className="mono">{maskKey(k.key)}</td>
                 <td>
                   <span className={`pill ${k.enabled ? "" : "off"}`}>{k.enabled ? "启用" : "停用"}</span>
