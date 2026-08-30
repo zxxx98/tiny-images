@@ -99,7 +99,7 @@ export async function localizeImage(dataDir: string, img: UnifiedImage, fetchTim
     if (img.b64 !== undefined) return { file: saveGeneratedImage(dataDir, img.b64).fileName };
     if (img.url !== undefined) {
       const b64 = await fetchAsB64(img.url, fetchTimeoutMs, undefined, "history");
-      return saveGeneratedImage(dataDir, b64);
+      return { file: saveGeneratedImage(dataDir, b64).fileName };
     }
   } catch {
     return null;

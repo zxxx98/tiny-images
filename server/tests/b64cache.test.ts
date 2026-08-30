@@ -87,6 +87,6 @@ describe("localizeImage", () => {
     expect(fromUrl?.file).toMatch(/\.png$/);
 
     expect(await localizeImage(dir, {}, 1000)).toBeNull();
-    expect(await localizeImage(dir, { url: `${b}/img.png` }, 1000)).toBeNull();
+    expect(await localizeImage(dir, { url: "http://127.0.0.1:1/img.png" }, 1000)).toBeNull();
   });
 });
