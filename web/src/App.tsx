@@ -1,6 +1,6 @@
 import { Component, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, setRole, type Me } from "./api";
+import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, QUOTA_EVENT, setRole, type Me } from "./api";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
@@ -89,6 +89,18 @@ export default function App() {
       .then(setMe)
       .catch(() => setMe(null));
   }, [location.pathname]);
+
+  // 生成结束等时机刷新顶栏额度
+  useEffect(() => {
+    const refresh = (): void => {
+      if (!getToken()) return;
+      fetchMe()
+        .then(setMe)
+        .catch(() => undefined);
+    };
+    window.addEventListener(QUOTA_EVENT, refresh);
+    return () => window.removeEventListener(QUOTA_EVENT, refresh);
+  }, []);
 
   const logout = () => {
     clearToken();

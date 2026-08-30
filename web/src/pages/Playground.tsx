@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, createJob, fetchJob, ApiError } from "../api";
+import { api, createJob, fetchJob, notifyQuotaChanged, ApiError } from "../api";
 
 interface ModelsResponse {
   data: { id: string }[];
@@ -114,6 +114,7 @@ export default function Playground() {
         setElapsed(job.latencyMs);
         setRunning(false);
         if (job.status === "error") setError(job.error ?? "生成失败");
+        notifyQuotaChanged();
       } catch (err) {
         stopPolling();
         localStorage.removeItem(JOB_KEY);

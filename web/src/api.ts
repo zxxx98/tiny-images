@@ -38,6 +38,12 @@ export function fetchMe(): Promise<Me> {
   return api<Me>("/admin/auth/me");
 }
 
+// 生成完成等时机通知顶栏刷新额度
+export const QUOTA_EVENT = "tiny-quota-changed";
+export function notifyQuotaChanged(): void {
+  window.dispatchEvent(new Event(QUOTA_EVENT));
+}
+
 export async function fetchSetupNeeded(): Promise<boolean> {
   const res = await fetch("/admin/auth/setup");
   const parsed = (await res.json().catch(() => ({}))) as { needed?: boolean };
