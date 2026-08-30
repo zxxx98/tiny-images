@@ -96,7 +96,7 @@ export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[
 // 结果图片本地化供历史引用；下载失败不影响主流程，返回 null
 export async function localizeImage(dataDir: string, img: UnifiedImage, fetchTimeoutMs: number): Promise<{ file: string } | null> {
   try {
-    if (img.b64 !== undefined) return saveGeneratedImage(dataDir, img.b64);
+    if (img.b64 !== undefined) return { file: saveGeneratedImage(dataDir, img.b64).fileName };
     if (img.url !== undefined) {
       const b64 = await fetchAsB64(img.url, fetchTimeoutMs, undefined, "history");
       return saveGeneratedImage(dataDir, b64);

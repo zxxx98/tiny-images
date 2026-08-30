@@ -81,8 +81,8 @@ describe("localizeImage", () => {
     expect(fromB64?.file).toMatch(/\.png$/);
     expect(fs.existsSync(path.join(dir, "generated", fromB64!.file))).toBe(true);
 
-    const b = await start();
     upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    const b = await start();
     const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000);
     expect(fromUrl?.file).toMatch(/\.png$/);
 
