@@ -1,6 +1,6 @@
-import { Component, ReactNode, useEffect } from "react";
+import { Component, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { getToken } from "./api";
+import { api, clearToken, fetchMe, getRole, getToken, setRole, type Me } from "./api";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
@@ -9,6 +9,12 @@ import Playground from "./pages/Playground";
 
 function RequireToken({ children }: { children: React.ReactElement }) {
   if (!getToken()) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireAdmin({ children }: { children: React.ReactElement }) {
+  if (!getToken()) return <Navigate to="/login" replace />;
+  if (getRole() !== "admin") return <Navigate to="/" replace />;
   return children;
 }
 
@@ -61,14 +67,36 @@ function Marquee() {
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] ?? "tiny-images"} · tiny-images 95`;
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!getToken()) return;
+    fetchMe()
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, [location.pathname]);
+
   const logout = () => {
-    localStorage.removeItem("tiny-admin-token");
+    clearToken();
+    setRole(null);
     navigate("/login");
+  };
+
+  const changePassword = async () => {
+    const oldPassword = window.prompt("输入当前密码");
+    if (!oldPassword) return;
+    const newPassword = window.prompt("输入新密码（至少 6 位）");
+    if (!newPassword) return;
+    try {
+      await api("/admin/auth/password", { method: "PUT", body: { oldPassword, newPassword } });
+      window.alert("密码已修改");
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "修改失败");
+    }
   };
   return (
     <div className="app">
@@ -91,10 +119,23 @@ export default function App() {
           <NavLink to="/history" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
             历史
           </NavLink>
-          <NavLink to="/admin" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
-            管理后台
-          </NavLink>
+          {getRole() === "admin" && (
+            <NavLink to="/admin" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
+              管理后台
+            </NavLink>
+          )}
         </nav>
+        {getToken() && me && (
+          <span className="muted">
+            {me.email}
+            {me.quotaRemaining !== null ? ` · 剩余额度 ${me.quotaRemaining}/${me.quotaTotal}` : ""}
+          </span>
+        )}
+        {getToken() && (
+          <button className="btn small" onClick={changePassword}>
+            改密码
+          </button>
+        )}
         {getToken() && (
           <button className="btn small" onClick={logout}>
             登出
@@ -126,9 +167,9 @@ export default function App() {
             <Route
               path="/admin"
               element={
-                <RequireToken>
+                <RequireAdmin>
                   <Admin />
-                </RequireToken>
+                </RequireAdmin>
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />

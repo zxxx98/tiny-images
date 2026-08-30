@@ -1,8 +1,42 @@
 export const TOKEN_KEY = "tiny-admin-token";
+export const ROLE_KEY = "tiny-role";
 
 export const getToken = (): string => localStorage.getItem(TOKEN_KEY) ?? "";
 export const setToken = (t: string): void => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);
+
+export function getRole(): "admin" | "user" | null {
+  const v = localStorage.getItem(ROLE_KEY);
+  return v === "admin" || v === "user" ? v : null;
+}
+
+export function setRole(role: "admin" | "user" | null): void {
+  if (role) localStorage.setItem(ROLE_KEY, role);
+  else localStorage.removeItem(ROLE_KEY);
+}
+
+export async function loginRequest(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+  const res = await fetch("/admin/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
+  if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });
+  return { token: parsed.token, role: parsed.role!, email: parsed.email! };
+}
+
+export interface Me {
+  role: "admin" | "user";
+  email: string;
+  quotaTotal: number | null;
+  quotaUsed: number;
+  quotaRemaining: number | null;
+}
+
+export function fetchMe(): Promise<Me> {
+  return api<Me>("/admin/auth/me");
+}
 
 export class ApiError extends Error {
   constructor(
@@ -75,7 +109,28 @@ export interface ApiKey {
   name: string;
   key: string;
   enabled: boolean;
+  userId: number | null;
+  userEmail?: string | null;
   createdAt: number;
+}
+
+export interface ChannelGroup {
+  id: number;
+  name: string;
+  createdAt: number;
+  channelIds: number[];
+}
+
+export interface UserView {
+  id: number;
+  email: string;
+  role: "admin" | "user";
+  enabled: boolean;
+  createdAt: number;
+  quotaTotal: number | null;
+  quotaUsed: number;
+  quotaRemaining: number | null;
+  groupIds: number[];
 }
 
 export interface LogRow {
