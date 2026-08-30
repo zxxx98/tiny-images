@@ -6,6 +6,8 @@ interface ModelsResponse {
   data: { id: string }[];
 }
 
+const SIZE_PRESETS = ["auto", "1024x1024", "1536x1024", "1024x1536", "512x512", "256x256"];
+
 const JOB_KEY = "tiny-running-job";
 const DRAFT_KEY = "tiny-playground-draft";
 
@@ -205,24 +207,43 @@ export default function Playground() {
               id="pg-n"
               type="number"
               min={1}
-              max={10}
+              max={4}
               value={n}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                setN(Number.isFinite(v) ? Math.min(10, Math.max(1, Math.round(v))) : 1);
+                setN(Number.isFinite(v) ? Math.min(4, Math.max(1, Math.round(v))) : 1);
               }}
             />
           </div>
           <div>
             <label htmlFor="pg-size">尺寸</label>
-            <input id="pg-size" list="pg-size-options" value={size} onChange={(e) => setSize(e.target.value)} placeholder="auto" />
-            <datalist id="pg-size-options">
-              <option value="1024x1024" />
-              <option value="1536x1024" />
-              <option value="1024x1536" />
-              <option value="512x512" />
-              <option value="256x256" />
-            </datalist>
+            <select
+              id="pg-size"
+              value={SIZE_PRESETS.includes(size) ? size : "custom"}
+              onChange={(e) => {
+                if (e.target.value === "custom") {
+                  if (SIZE_PRESETS.includes(size) || size === "") setSize("1024x1024");
+                } else {
+                  setSize(e.target.value);
+                }
+              }}
+            >
+              {SIZE_PRESETS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+              <option value="custom">自定义…</option>
+            </select>
+            {!SIZE_PRESETS.includes(size) && (
+              <input
+                id="pg-size-custom"
+                aria-label="自定义尺寸"
+                value={size}
+                onChange={(e) => setSize(e.target.value)}
+                placeholder="1024x1024"
+              />
+            )}
           </div>
         </div>
         <label htmlFor="pg-rf">response_format</label>
