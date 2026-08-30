@@ -67,6 +67,34 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS generations_cursor ON generations(id DESC);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS channel_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS channel_group_members (
+    group_id INTEGER NOT NULL REFERENCES channel_groups(id) ON DELETE CASCADE,
+    channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    UNIQUE(group_id, channel_id)
+  );
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin','user')),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    quota_total INTEGER,
+    quota_used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS user_group_members (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id INTEGER NOT NULL REFERENCES channel_groups(id) ON DELETE CASCADE,
+    UNIQUE(user_id, group_id)
+  );
+  ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

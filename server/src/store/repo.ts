@@ -36,6 +36,7 @@ export interface ApiKeyRow {
   name: string;
   key: string;
   enabled: boolean;
+  userId: number | null;
   createdAt: number;
 }
 
@@ -69,6 +70,25 @@ export interface GenerationEntry {
 
 export interface GenerationRow extends GenerationEntry {
   id: number;
+}
+
+export interface GroupRow {
+  id: number;
+  name: string;
+  createdAt: number;
+  channelIds: number[];
+}
+
+export interface UserRow {
+  id: number;
+  email: string;
+  passwordHash: string;
+  role: "admin" | "user";
+  enabled: boolean;
+  createdAt: number;
+  quotaTotal: number | null;
+  quotaUsed: number;
+  groupIds: number[];
 }
 
 export class ConflictError extends Error {
@@ -304,11 +324,11 @@ export class Repo {
 
   // ---- api keys (outbound auth) ----
 
-  createApiKey(name: string): ApiKeyRow {
+  createApiKey(name: string, userId: number | null = null): ApiKeyRow {
     const key = `sk-tiny-${randomBytes(24).toString("base64url")}`;
     const res = this.db
-      .prepare("INSERT INTO api_keys (name, key, enabled, created_at) VALUES (?, ?, 1, ?)")
-      .run(name, key, Date.now());
+      .prepare("INSERT INTO api_keys (name, key, enabled, user_id, created_at) VALUES (?, ?, 1, ?, ?)")
+      .run(name, key, userId, Date.now());
     return this.getApiKey(Number(res.lastInsertRowid))!;
   }
 
@@ -327,12 +347,13 @@ export class Repo {
     return row ? this.toApiKey(row) : null;
   }
 
-  updateApiKey(id: number, patch: { name?: string; enabled?: boolean }): ApiKeyRow | null {
+  updateApiKey(id: number, patch: { name?: string; enabled?: boolean; userId?: number | null }): ApiKeyRow | null {
     const existing = this.getApiKey(id);
     if (!existing) return null;
     const name = patch.name ?? existing.name;
     const enabled = patch.enabled ?? existing.enabled;
-    this.db.prepare("UPDATE api_keys SET name = ?, enabled = ? WHERE id = ?").run(name, enabled ? 1 : 0, id);
+    const userId = patch.userId !== undefined ? patch.userId : existing.userId;
+    this.db.prepare("UPDATE api_keys SET name = ?, enabled = ?, user_id = ? WHERE id = ?").run(name, enabled ? 1 : 0, userId, id);
     return this.getApiKey(id);
   }
 
@@ -347,6 +368,7 @@ export class Repo {
       name: String(row.name),
       key: String(row.key),
       enabled: Number(row.enabled) === 1,
+      userId: row.user_id === null || row.user_id === undefined ? null : Number(row.user_id),
       createdAt: Number(row.created_at),
     };
   }
@@ -451,5 +473,144 @@ export class Repo {
       errorMessage: r.error_message === null ? null : String(r.error_message),
       images: String(r.images),
     };
+  }
+
+  // ---- channel groups ----
+
+  createGroup(name: string): GroupRow {
+    const now = Date.now();
+    try {
+      const res = this.db.prepare("INSERT INTO channel_groups (name, created_at) VALUES (?, ?)").run(name, now);
+      const id = Number(res.lastInsertRowid);
+      return { id, name, createdAt: now, channelIds: [] };
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`group '${name}' already exists`);
+      throw err;
+    }
+  }
+
+  listGroups(): GroupRow[] {
+    const rows = this.db.prepare("SELECT * FROM channel_groups ORDER BY id").all() as Record<string, unknown>[];
+    const members = this.db
+      .prepare("SELECT group_id, channel_id FROM channel_group_members ORDER BY channel_id")
+      .all() as Record<string, unknown>[];
+    return rows.map((r) => {
+      const id = Number(r.id);
+      return {
+        id,
+        name: String(r.name),
+        createdAt: Number(r.created_at),
+        channelIds: members.filter((m) => Number(m.group_id) === id).map((m) => Number(m.channel_id)),
+      };
+    });
+  }
+
+  updateGroup(id: number, name: string): GroupRow | null {
+    if (!this.db.prepare("SELECT id FROM channel_groups WHERE id = ?").get(id)) return null;
+    try {
+      this.db.prepare("UPDATE channel_groups SET name = ? WHERE id = ?").run(name, id);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`group '${name}' already exists`);
+      throw err;
+    }
+    return this.listGroups().find((g) => g.id === id) ?? null;
+  }
+
+  deleteGroup(id: number): boolean {
+    const res = this.db.prepare("DELETE FROM channel_groups WHERE id = ?").run(id);
+    return Number(res.changes) > 0;
+  }
+
+  setGroupChannels(groupId: number, channelIds: number[]): void {
+    this.db.prepare("DELETE FROM channel_group_members WHERE group_id = ?").run(groupId);
+    const ins = this.db.prepare("INSERT OR IGNORE INTO channel_group_members (group_id, channel_id) VALUES (?, ?)");
+    for (const cid of new Set(channelIds)) ins.run(groupId, cid);
+  }
+
+  // ---- users ----
+
+  private toUser(row: Record<string, unknown>): UserRow {
+    const groupIds = this.db
+      .prepare("SELECT group_id FROM user_group_members WHERE user_id = ? ORDER BY group_id")
+      .all(Number(row.id)) as Record<string, unknown>[];
+    return {
+      id: Number(row.id),
+      email: String(row.email),
+      passwordHash: String(row.password_hash),
+      role: String(row.role) as UserRow["role"],
+      enabled: Number(row.enabled) === 1,
+      createdAt: Number(row.created_at),
+      quotaTotal: row.quota_total === null || row.quota_total === undefined ? null : Number(row.quota_total),
+      quotaUsed: Number(row.quota_used),
+      groupIds: groupIds.map((g) => Number(g.group_id)),
+    };
+  }
+
+  createUser(input: { email: string; passwordHash: string; role: "admin" | "user"; quotaTotal: number | null }): UserRow {
+    const email = input.email.toLowerCase();
+    try {
+      const res = this.db
+        .prepare("INSERT INTO users (email, password_hash, role, enabled, quota_total, quota_used, created_at) VALUES (?, ?, ?, 1, ?, 0, ?)")
+        .run(email, input.passwordHash, input.role, input.quotaTotal, Date.now());
+      return this.getUser(Number(res.lastInsertRowid))!;
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictError(`user '${email}' already exists`);
+      throw err;
+    }
+  }
+
+  getUser(id: number): UserRow | null {
+    const row = this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toUser(row) : null;
+  }
+
+  getUserByEmail(email: string): UserRow | null {
+    const row = this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()) as Record<string, unknown> | undefined;
+    return row ? this.toUser(row) : null;
+  }
+
+  listUsers(): UserRow[] {
+    const rows = this.db.prepare("SELECT * FROM users ORDER BY id").all() as Record<string, unknown>[];
+    return rows.map((r) => this.toUser(r));
+  }
+
+  updateUser(id: number, patch: { enabled?: boolean; quotaTotal?: number | null; passwordHash?: string }): UserRow | null {
+    const existing = this.getUser(id);
+    if (!existing) return null;
+    const enabled = patch.enabled ?? existing.enabled;
+    const quotaTotal = patch.quotaTotal !== undefined ? patch.quotaTotal : existing.quotaTotal;
+    const passwordHash = patch.passwordHash ?? existing.passwordHash;
+    this.db.prepare("UPDATE users SET enabled = ?, quota_total = ?, password_hash = ? WHERE id = ?").run(enabled ? 1 : 0, quotaTotal, passwordHash, id);
+    return this.getUser(id);
+  }
+
+  deleteUser(id: number): boolean {
+    // api_keys.user_id 为 ON DELETE SET NULL，无需手动处理
+    const res = this.db.prepare("DELETE FROM users WHERE id = ?").run(id);
+    return Number(res.changes) > 0;
+  }
+
+  setUserGroups(userId: number, groupIds: number[]): void {
+    this.db.prepare("DELETE FROM user_group_members WHERE user_id = ?").run(userId);
+    const ins = this.db.prepare("INSERT OR IGNORE INTO user_group_members (user_id, group_id) VALUES (?, ?)");
+    for (const gid of new Set(groupIds)) ins.run(userId, gid);
+  }
+
+  allowedChannelIds(userId: number | null): number[] | null {
+    if (userId === null) return null;
+    const rows = this.db
+      .prepare(
+        "SELECT DISTINCT m.channel_id FROM user_group_members ug JOIN channel_group_members m ON m.group_id = ug.group_id WHERE ug.user_id = ? ORDER BY m.channel_id",
+      )
+      .all(userId) as Record<string, unknown>[];
+    if (rows.length === 0) return null; // 未配置分组 = 不限
+    return rows.map((r) => Number(r.channel_id));
+  }
+
+  chargeQuota(userId: number, n: number): boolean {
+    const res = this.db
+      .prepare("UPDATE users SET quota_used = quota_used + ? WHERE id = ? AND (quota_total IS NULL OR quota_used + ? <= quota_total)")
+      .run(n, userId, n);
+    return Number(res.changes) > 0;
   }
 }
