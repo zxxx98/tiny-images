@@ -7,7 +7,7 @@ import { loadEnv } from "./env.js";
 import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
 import { Repo } from "./store/repo.js";
-import { seedIfEmpty } from "./store/seed.js";
+import { seedIfEmpty, seedAdminIfEmpty } from "./store/seed.js";
 import { JobManager } from "./server/jobs.js";
 import path from "node:path";
 
@@ -15,6 +15,15 @@ const env = loadEnv();
 const db = openDb(env.dataDir);
 const repo = new Repo(db);
 seedIfEmpty(env.dataDir, repo);
+
+const seeded = seedAdminIfEmpty(repo, env);
+if (seeded.created) {
+  if (seeded.password) {
+    console.info(`created initial admin ${seeded.email} with password: ${seeded.password} (change it after first login)`);
+  } else {
+    console.info(`created initial admin ${seeded.email}`);
+  }
+}
 
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
