@@ -9,6 +9,7 @@ import { ModelRouter } from "../src/core/router.js";
 import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
 import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
+import { JobManager } from "../src/server/jobs.js";
 
 const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -37,6 +38,7 @@ const app = await buildApp({
   keyPool,
   provider,
   executor: new Executor({ router, keyPool, provider, repo }),
+  jobManager: new JobManager(),
   logger: false,
   webDist: path.resolve(import.meta.dirname, "../../web/dist"),
 });
@@ -111,6 +113,38 @@ const badKey = await fetch(`${base}/v1/images/generations`, {
   body: JSON.stringify({ model: "img-1", prompt: "x" }),
 });
 console.log("[e2e] generation with wrong key:", badKey.status);
+
+// ---- 历史 + job 端点 ----
+const keyHdr = { "content-type": "application/json", authorization: `Bearer ${apiKey.key}` };
+const job = await (
+  await fetch(`${base}/v1/images/jobs`, {
+    method: "POST",
+    headers: keyHdr,
+    body: JSON.stringify({ model: "img-1", prompt: "history e2e cat" }),
+  })
+).json();
+let jobStatus = { status: "running", images: [] as { file: string; url: string }[] } as unknown as {
+  status: string;
+  images: { file: string; url: string }[];
+  error?: string | null;
+};
+for (let i = 0; i < 50 && jobStatus.status === "running"; i++) {
+  await new Promise((r) => setTimeout(r, 100));
+  jobStatus = (await (await fetch(`${base}/v1/images/jobs/${job.jobId}`, { headers: keyHdr })).json()) as typeof jobStatus;
+}
+console.log("[e2e] job:", jobStatus.status, "images:", jobStatus.images?.length ?? 0, "error:", jobStatus.error ?? "-");
+console.assert(jobStatus.status === "ok" && jobStatus.images?.length === 1, "job failed");
+const imgRes = await fetch(jobStatus.images[0]?.url ?? "", { headers: { authorization: `Bearer ${apiKey.key}` } });
+console.log("[e2e] job image fetchable:", imgRes.status);
+
+const hist = (await (await fetch(`${base}/v1/history?limit=5`, { headers: keyHdr })).json()) as {
+  items: { prompt: string; status: string; images: { url: string }[] }[];
+};
+console.log("[e2e] history:", hist.items.length, "items, latest prompt:", hist.items[0]?.prompt);
+console.assert(hist.items.length >= 2 && hist.items[0].prompt === "history e2e cat", "history missing records");
+const histImg = await fetch(hist.items[0].images[0]?.url ?? "", { headers: { authorization: `Bearer ${apiKey.key}` } });
+console.assert(histImg.status === 200, "history image not fetchable");
+console.log("[e2e] history ok");
 
 // ---- 日志 ----
 const logs = await (await fetch(`${base}/admin/logs`, { headers: admin })).json();

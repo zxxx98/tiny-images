@@ -54,6 +54,23 @@ export interface LogRow extends LogEntry {
   id: number;
 }
 
+export interface GenerationEntry {
+  createdAt: number;
+  apiKeyId: number | null;
+  model: string;
+  prompt: string;
+  params: string;
+  status: "pending" | "ok" | "error";
+  channelId: number | null;
+  latencyMs: number | null;
+  errorMessage: string | null;
+  images: string;
+}
+
+export interface GenerationRow extends GenerationEntry {
+  id: number;
+}
+
 export class ConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -399,7 +416,7 @@ export class Repo {
     };
     this.db
       .prepare(`UPDATE generations SET status = ?, channel_id = ?, latency_ms = ?, error_message = ?, images = ? WHERE id = ?`)
-      .run(merged.status, merged.channelId, merged.latencyMs, merged.errorMessage, merged.images, id);
+      .run(merged.status, merged.channelId ?? null, merged.latencyMs ?? null, merged.errorMessage ?? null, merged.images, id);
   }
 
   listGenerations(apiKeyId: number | null, before: number | null, limit: number): GenerationRow[] {

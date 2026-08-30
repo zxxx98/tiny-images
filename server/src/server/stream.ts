@@ -77,7 +77,7 @@ async function recordStreamGeneration(
       apiKeyId: callerApiKeyId,
       model,
       prompt: (payload as UnifiedGenRequest).prompt,
-      params: JSON.stringify({ n: payload.n, size: payload.size, quality: payload.quality, responseFormat: payload.responseFormat }),
+      params: JSON.stringify({ n: payload.n, size: payload.size, quality: (payload as UnifiedGenRequest).quality, responseFormat: payload.responseFormat }),
       status,
       channelId,
       latencyMs,

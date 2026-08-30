@@ -105,7 +105,7 @@ export function registerGenerations(ctx: AppContext): void {
     const started = Date.now();
     try {
       const body = await finishSync(ctx, req, reply, model, "generate", genReq);
-      await recordGeneration(ctx, req, model, genReq, "ok", Date.now() - started, null, await extractHistoryImages(ctx, body));
+      await recordGeneration(ctx, req, model, genReq, "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
       return body;
     } catch (err) {
       await recordGeneration(ctx, req, model, genReq, "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
@@ -117,7 +117,7 @@ export function registerGenerations(ctx: AppContext): void {
 // 兼容端点同样进历史：从响应里提取图片并本地化落盘（失败忽略该张）
 async function extractHistoryImages(ctx: AppContext, body: Record<string, unknown>): Promise<{ file: string; revisedPrompt?: string }[]> {
   const out: { file: string; revisedPrompt?: string }[] = [];
-  const items = (body.data as Record<string, unknown>[] | undefined) ?? [];
+  const items = ((body.data as unknown) as Record<string, unknown>[] | undefined) ?? [];
   for (const item of items) {
     const url = typeof item.url === "string" ? item.url : undefined;
     const b64 = typeof item.b64_json === "string" ? item.b64_json : undefined;
