@@ -1,0 +1,89 @@
+import { randomBytes } from "node:crypto";
+
+export interface JobImage {
+  file: string;
+  revisedPrompt?: string;
+}
+
+export interface JobRecord {
+  id: string;
+  apiKeyId: number | null;
+  generationId: number;
+  model: string;
+  prompt: string;
+  createdAt: number;
+  status: "running" | "ok" | "error";
+  progress: string | null;
+  images: JobImage[];
+  channelId: number | null;
+  channelName: string | null;
+  latencyMs: number | null;
+  errorMessage: string | null;
+}
+
+// 内存 job 注册表：进程内可轮询的生成任务；历史查证走 generations 表
+export class JobManager {
+  private jobs = new Map<string, JobRecord>(); // Map 保插入序，便于按最老淘汰
+
+  constructor(private readonly max = 200) {}
+
+  create(input: { apiKeyId: number | null; generationId: number; model: string; prompt: string }): JobRecord {
+    const job: JobRecord = {
+      id: randomBytes(12).toString("hex"),
+      apiKeyId: input.apiKeyId,
+      generationId: input.generationId,
+      model: input.model,
+      prompt: input.prompt,
+      createdAt: Date.now(),
+      status: "running",
+      progress: null,
+      images: [],
+      channelId: null,
+      channelName: null,
+      latencyMs: null,
+      errorMessage: null,
+    };
+    this.jobs.set(job.id, job);
+    this.prune();
+    return job;
+  }
+
+  get(id: string, apiKeyId: number | null): JobRecord | null {
+    const job = this.jobs.get(id);
+    if (!job) return null;
+    // apiKeyId 为 null 的调用者（admin token）可见全部
+    if (job.apiKeyId !== null && apiKeyId !== null && job.apiKeyId !== apiKeyId) return null;
+    return job;
+  }
+
+  setProgress(id: string, message: string): void {
+    const job = this.jobs.get(id);
+    if (job) job.progress = message;
+  }
+
+  addImage(id: string, image: JobImage): void {
+    const job = this.jobs.get(id);
+    if (job) job.images.push(image);
+  }
+
+  finish(
+    id: string,
+    patch: { status: "ok" | "error"; channelId: number | null; channelName: string | null; latencyMs: number | null; errorMessage: string | null },
+  ): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.status = patch.status;
+    job.channelId = patch.channelId;
+    job.channelName = patch.channelName;
+    job.latencyMs = patch.latencyMs;
+    job.errorMessage = patch.errorMessage;
+  }
+
+  prune(): void {
+    if (this.jobs.size <= this.max) return;
+    for (const [id, job] of this.jobs) {
+      if (this.jobs.size <= this.max) break;
+      if (job.status !== "running") this.jobs.delete(id);
+    }
+  }
+}
