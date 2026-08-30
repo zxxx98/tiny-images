@@ -35,17 +35,45 @@ jobs:
       - name: 构建 web
         run: npm run build -w web
 
+      # 产物打包：测试通过后重装纯生产依赖（server 生产依赖均为纯 JS，双架构通用），
+      # 镜像只做 COPY，多架构构建无需 QEMU
+      - name: 准备镜像产物（ci-dist）
+        run: |
+          npm ci --omit=dev -w server
+          mkdir -p ci-dist/server-dist ci-dist/web-dist ci-dist/server
+          cp Dockerfile.ci ci-dist/
+          cp package.json package-lock.json ci-dist/
+          cp server/package.json ci-dist/server/package.json
+          cp -r node_modules ci-dist/node_modules
+          # 版本冲突的依赖可能嵌套装在 workspace 内（如 @fastify/static），一并拷贝
+          if [ -d server/node_modules ]; then cp -r server/node_modules ci-dist/server/node_modules; fi
+          cp -r server/dist/* ci-dist/server-dist/
+          cp -r web/dist/* ci-dist/web-dist/
+          tar -czf ci-dist.tgz -C ci-dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-dist
+          path: ci-dist.tgz
+          retention-days: 3
+
+  docker:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-dist
+
+      - name: 解包产物
+        run: mkdir ci-dist && tar -xzf ci-dist.tgz -C ci-dist
+
       - name: 登录 GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 设置 QEMU（跨平台构建）
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: 设置 Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,10 +91,9 @@ jobs:
       - name: 构建并推送镜像
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ci-dist
+          file: ci-dist/Dockerfile.ci
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
