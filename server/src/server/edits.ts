@@ -2,7 +2,7 @@ import type { FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
 import type { IncomingImage, UnifiedEditRequest } from "../core/types.js";
 import type { AppContext } from "../app.js";
-import { finishSync, fileBaseUrlFor } from "./generations.js";
+import { extractHistoryImages, fileBaseUrlFor, finishSync, recordGeneration } from "./generations.js";
 import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
 
@@ -42,9 +42,17 @@ export function registerEdits(ctx: AppContext): void {
       mask,
       passthrough: common.passthrough,
     };
+    const started = Date.now();
     if (common.stream) {
       return streamImageFlow(ctx, req, reply, model, "edit", editReq, fileBaseUrlFor(ctx, req));
     }
-    return finishSync(ctx, req, reply, model, "edit", editReq);
+    try {
+      const body = await finishSync(ctx, req, reply, model, "edit", editReq);
+      await recordGeneration(ctx, req, model, editReq, "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
+      return body;
+    } catch (err) {
+      await recordGeneration(ctx, req, model, editReq, "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
+      throw err;
+    }
   });
 }

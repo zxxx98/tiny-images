@@ -115,7 +115,7 @@ export function registerGenerations(ctx: AppContext): void {
 }
 
 // 兼容端点同样进历史：从响应里提取图片并本地化落盘（失败忽略该张）
-async function extractHistoryImages(ctx: AppContext, body: Record<string, unknown>): Promise<{ file: string; revisedPrompt?: string }[]> {
+export async function extractHistoryImages(ctx: AppContext, body: Record<string, unknown>): Promise<{ file: string; revisedPrompt?: string }[]> {
   const out: { file: string; revisedPrompt?: string }[] = [];
   const items = ((body.data as unknown) as Record<string, unknown>[] | undefined) ?? [];
   for (const item of items) {
@@ -128,11 +128,11 @@ async function extractHistoryImages(ctx: AppContext, body: Record<string, unknow
   return out;
 }
 
-async function recordGeneration(
+export async function recordGeneration(
   ctx: AppContext,
   req: FastifyRequest,
   model: string,
-  genReq: UnifiedGenRequest,
+  genReq: UnifiedGenRequest | UnifiedEditRequest,
   status: "ok" | "error",
   latencyMs: number,
   errorMessage: string | null,
@@ -145,7 +145,12 @@ async function recordGeneration(
       userId: req.callerUserId ?? null,
       model,
       prompt: genReq.prompt,
-      params: JSON.stringify({ n: genReq.n, size: genReq.size, quality: genReq.quality, responseFormat: genReq.responseFormat }),
+      params: JSON.stringify({
+        n: genReq.n,
+        size: genReq.size,
+        quality: "quality" in genReq ? genReq.quality : undefined,
+        responseFormat: genReq.responseFormat,
+      }),
       status,
       channelId: null,
       latencyMs,

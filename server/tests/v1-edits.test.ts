@@ -149,4 +149,18 @@ describe("POST /v1/images/edits", () => {
     const res = await app.inject({ method: "POST", url: "/v1/images/edits", payload: { model: "img-1", prompt: "x" } });
     expect(res.statusCode).toBe(400);
   });
+
+  it("writes success and failure into generation history", async () => {
+    const ok = await injectForm(makeForm());
+    expect(ok.statusCode).toBe(200);
+    repo.updateChannel(repo.listChannels()[0].id, { editMode: "multipart" });
+    upstreamMode = "json-only";
+    await injectForm(makeForm());
+    const rows = repo.listGenerations({ admin: true, userId: null, apiKeyId: null }, null, 10);
+    expect(rows.length).toBe(2);
+    expect(rows[0].status).toBe("error");
+    expect(rows[1].status).toBe("ok");
+    expect(rows[1].prompt).toBe("make it blue");
+    expect(JSON.parse(rows[1].images).length).toBe(1);
+  });
 });

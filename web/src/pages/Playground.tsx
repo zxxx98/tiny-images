@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, createJob, fetchJob, notifyQuotaChanged, ApiError } from "../api";
+import { api, clearToken, createJob, fetchJob, getToken, notifyQuotaChanged, ApiError } from "../api";
 
 interface ModelsResponse {
   data: { id: string }[];
@@ -12,6 +12,7 @@ const JOB_KEY = "tiny-running-job";
 const DRAFT_KEY = "tiny-playground-draft";
 
 interface Draft {
+  mode?: "generate" | "edit";
   model?: string;
   prompt?: string;
   n?: number;
@@ -21,6 +22,7 @@ interface Draft {
 }
 
 export default function Playground() {
+  const [mode, setMode] = useState<"generate" | "edit">("generate");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -28,6 +30,9 @@ export default function Playground() {
   const [size, setSize] = useState("auto");
   const [responseFormat, setResponseFormat] = useState("");
   const [extra, setExtra] = useState("{}");
+  const [editFiles, setEditFiles] = useState<File[]>([]);
+  const [maskFile, setMaskFile] = useState<File | null>(null);
+  const [editPreviews, setEditPreviews] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [channel, setChannel] = useState<string | null>(null);
@@ -35,8 +40,8 @@ export default function Playground() {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ src: string; prompt: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const startedRef = useRef(0);
   const location = useLocation();
 
@@ -53,7 +58,9 @@ export default function Playground() {
   useEffect(() => {
     try {
       const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}") as Draft;
-      const fromNav = (location.state ?? null) as { prompt?: string; model?: string; size?: string } | null;
+      const fromNav = (location.state ?? null) as { prompt?: string; model?: string; size?: string; editImageUrl?: string } | null;
+      if (draft.mode) setMode(draft.mode);
+      if (fromNav?.editImageUrl) void loadIntoEdit(fromNav.editImageUrl);
       if (fromNav?.prompt) setPrompt(fromNav.prompt);
       else if (draft.prompt) setPrompt(draft.prompt);
       if (fromNav?.model) setModel(fromNav.model);
@@ -77,10 +84,35 @@ export default function Playground() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 表单草稿持久化，切走再回来不丢输入
+  // 表单草稿持久化，切走再回来不丢输入（文件不持久化）
   useEffect(() => {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ model, prompt, n, size, responseFormat, extra }));
-  }, [model, prompt, n, size, responseFormat, extra]);
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ mode, model, prompt, n, size, responseFormat, extra }));
+  }, [mode, model, prompt, n, size, responseFormat, extra]);
+
+  // 原图缩略图预览；文件变化时释放旧的 objectURL
+  useEffect(() => {
+    const urls = editFiles.map((f) => URL.createObjectURL(f));
+    setEditPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [editFiles]);
+
+  // 把一张已生成的图（结果区或历史页）载入编辑模式：拉取为 File 后切到编辑
+  const loadIntoEdit = async (src: string): Promise<void> => {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const ext = blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : "png";
+      setEditFiles([new File([blob], `edit-src.${ext}`, { type: blob.type || "image/png" })]);
+      setMaskFile(null);
+      setMode("edit");
+      setError(null);
+      setStatus(null);
+      window.scrollTo({ top: 0 });
+    } catch (err) {
+      setError(`载入图片到编辑模式失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   const buildPayload = (): Record<string, unknown> | null => {
     const payload: Record<string, unknown> = { model, prompt, n };
@@ -143,9 +175,13 @@ export default function Playground() {
     setChannel(null);
     setStatus(null);
     setElapsed(null);
+    startedRef.current = Date.now();
+    if (mode === "edit") {
+      await runEdit();
+      return;
+    }
     const payload = buildPayload();
     if (!payload) return;
-    startedRef.current = Date.now();
     setRunning(true);
     try {
       const { jobId } = await createJob(payload);
@@ -157,7 +193,70 @@ export default function Playground() {
     }
   };
 
+  // 编辑模式：multipart 直连 /v1/images/edits（同步请求），完成后走历史页可查
+  const runEdit = async (): Promise<void> => {
+    const extraObj: Record<string, unknown> = (() => {
+      try {
+        return JSON.parse(extra || "{}") as Record<string, unknown>;
+      } catch {
+        setError("高级参数不是合法 JSON");
+        return {};
+      }
+    })();
+    const form = new FormData();
+    form.append("model", model);
+    form.append("prompt", prompt);
+    form.append("n", String(n));
+    if (size && size !== "auto") form.append("size", size);
+    // 结果要直接展示，统一要 url（服务端会自动做 b64→url 落盘）
+    form.append("response_format", "url");
+    for (const [k, v] of Object.entries(extraObj)) form.append(k, typeof v === "string" ? v : JSON.stringify(v));
+    for (const f of editFiles) form.append("image", f, f.name);
+    if (maskFile) form.append("mask", maskFile, maskFile.name);
+
+    setRunning(true);
+    abortRef.current = new AbortController();
+    try {
+      const res = await fetch("/v1/images/edits", {
+        method: "POST",
+        headers: { authorization: `Bearer ${getToken()}` },
+        body: form,
+        signal: abortRef.current.signal,
+      });
+      const parsed = (await res.json().catch(() => ({}))) as {
+        data?: { url?: string; b64_json?: string; revised_prompt?: string }[];
+        error?: { message?: string };
+      };
+      if (res.status === 401 && window.location.pathname !== "/login") {
+        clearToken();
+        window.location.assign("/login");
+        return;
+      }
+      if (!res.ok) throw new Error(parsed.error?.message ?? `HTTP ${res.status}`);
+      const items = parsed.data ?? [];
+      const urls = items.map((it) => it.url ?? (it.b64_json ? `data:image/png;base64,${it.b64_json}` : "")).filter(Boolean);
+      setImages(urls);
+      setRevisedPrompts(items.map((it) => it.revised_prompt).filter((v): v is string => !!v));
+      setElapsed(Date.now() - startedRef.current);
+      notifyQuotaChanged();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStatus("已取消");
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      abortRef.current = null;
+      setRunning(false);
+    }
+  };
+
   const cancel = (): void => {
+    if (mode === "edit") {
+      // 同步请求直接中断
+      abortRef.current?.abort();
+      return;
+    }
     // 放弃轮询；服务端任务自然结束并写入历史
     stopPolling();
     localStorage.removeItem(JOB_KEY);
@@ -176,6 +275,24 @@ export default function Playground() {
     <div className="two-col">
       <form className="card" onSubmit={run}>
         <h2>Playground</h2>
+        <div className="row" role="tablist" aria-label="生成模式">
+          <button
+            type="button"
+            className={`btn ${mode === "generate" ? "primary" : "ghost"}`}
+            aria-pressed={mode === "generate"}
+            onClick={() => setMode("generate")}
+          >
+            文生图
+          </button>
+          <button
+            type="button"
+            className={`btn ${mode === "edit" ? "primary" : "ghost"}`}
+            aria-pressed={mode === "edit"}
+            onClick={() => setMode("edit")}
+          >
+            图片编辑
+          </button>
+        </div>
         <label htmlFor="pg-model">模型</label>
         {models.length === 0 ? (
           <p className="muted">
@@ -197,9 +314,40 @@ export default function Playground() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={quickSubmit}
-          placeholder="描述你想生成的图片…"
+          placeholder={mode === "edit" ? "描述要如何修改上传的图片…" : "描述你想生成的图片…"}
           required
         />
+        {mode === "edit" && (
+          <>
+            <label htmlFor="pg-edit-image">原图（可多选，PNG/JPG/WebP）</label>
+            <input
+              id="pg-edit-image"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              onChange={(e) => setEditFiles(Array.from(e.target.files ?? []))}
+              required
+            />
+            {editPreviews.length > 0 && (
+              <div className="edit-previews">
+                {editFiles.map((f, i) => (
+                  <figure key={`${f.name}-${i}`} className="edit-preview" title={f.name}>
+                    <img src={editPreviews[i]} alt={`原图 ${i + 1}：${f.name}`} />
+                    <figcaption className="muted">{f.name}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            )}
+            <label htmlFor="pg-edit-mask">蒙版 mask（可选，透明区域将被重绘）</label>
+            <input
+              id="pg-edit-mask"
+              type="file"
+              accept="image/png"
+              onChange={(e) => setMaskFile(e.target.files?.[0] ?? null)}
+            />
+            {maskFile && <p className="muted">{maskFile.name}</p>}
+          </>
+        )}
         <div className="row">
           <div>
             <label htmlFor="pg-n">数量 n</label>
@@ -264,8 +412,8 @@ export default function Playground() {
           />
         </details>
         <div className="row">
-          <button className="btn primary" type="submit" disabled={running || !model || !prompt}>
-            {running ? "生成中…" : "生成"}
+          <button className="btn primary" type="submit" disabled={running || !model || !prompt || (mode === "edit" && editFiles.length === 0)}>
+            {running ? "生成中…" : mode === "edit" ? "编辑" : "生成"}
           </button>
           {running && (
             <button className="btn ghost" type="button" onClick={cancel}>
@@ -300,7 +448,8 @@ export default function Playground() {
               <img
                 src={src}
                 alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
-                onClick={() => setPreview({ src, prompt: prompt || `生成结果 ${i + 1}` })}
+                title="点击进入图片编辑"
+                onClick={() => void loadIntoEdit(src)}
               />
               <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
                 下载
@@ -332,12 +481,6 @@ export default function Playground() {
           </details>
         )}
       </div>
-      {preview && (
-        <div className="lightbox" role="dialog" onClick={() => setPreview(null)}>
-          <img src={preview.src} alt={preview.prompt} />
-          <p className="mono">{preview.prompt}</p>
-        </div>
-      )}
     </div>
   );
 }

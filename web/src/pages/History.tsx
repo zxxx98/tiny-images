@@ -66,6 +66,11 @@ export default function History() {
     navigate("/", { state: { prompt: item.prompt, model: item.model } });
   };
 
+  // 把历史图片带入 Playground 的编辑模式
+  const editImage = (url: string): void => {
+    navigate("/", { state: { editImageUrl: url } });
+  };
+
   const copyPrompt = async (item: HistoryItem): Promise<void> => {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(true);
@@ -150,11 +155,18 @@ export default function History() {
                       src={img.url}
                       alt={`历史图片 ${i + 1}`}
                       loading="lazy"
+                      title="点击进入图片编辑"
+                      onClick={() => editImage(img.url)}
                       onError={markExpired}
                     />
-                    <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
-                      下载
-                    </a>
+                    <div className="shot-actions">
+                      <button className="btn small" onClick={() => editImage(img.url)}>
+                        编辑此图
+                      </button>
+                      <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
+                        下载
+                      </a>
+                    </div>
                   </figure>
                 ))}
                 {detail.status === "ok" && detail.images.length === 0 && <span className="expired">已过期</span>}

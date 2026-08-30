@@ -566,6 +566,33 @@ textarea:disabled {
   gap: 12px;
 }
 
+/* 编辑模式带入的原图缩略图 */
+.edit-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.edit-preview {
+  margin: 0;
+  max-width: 140px;
+}
+
+.edit-preview img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border: 1px solid #888;
+  background: #fff;
+}
+
+.edit-preview figcaption {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gallery .shot:only-child {
   grid-column: 1 / -1;
 }
@@ -1204,5 +1231,11 @@ details textarea {
   word-break: break-all;
 }
 .shot img {
-  cursor: zoom-in;
+  cursor: pointer;
+}
+
+.shot-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
