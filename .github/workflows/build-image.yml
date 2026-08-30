@@ -40,7 +40,7 @@ jobs:
       - name: 准备镜像产物（ci-dist）
         run: |
           npm ci --omit=dev -w server
-          mkdir -p ci-dist/server-dist ci-dist/web-dist ci-dist/server
+          mkdir -p ci-dist/server-dist ci-dist/web-dist ci-dist/server ci-dist/server/node_modules
           cp Dockerfile.ci ci-dist/
           cp package.json package-lock.json ci-dist/
           cp server/package.json ci-dist/server/package.json

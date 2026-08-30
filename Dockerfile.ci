@@ -8,7 +8,9 @@ ENV NODE_ENV=production \
     PORT=3000
 COPY package.json package-lock.json ./
 COPY server/package.json server/
+# 版本冲突的依赖（如 @fastify/static）嵌装在 workspace 内，必须一并拷贝
 COPY node_modules ./node_modules
+COPY server/node_modules ./server/node_modules
 COPY server-dist ./server/dist
 COPY web-dist ./web/dist
 VOLUME /data
