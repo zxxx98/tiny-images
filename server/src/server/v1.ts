@@ -6,7 +6,11 @@ import { registerHistory } from "./history.js";
 export function registerV1(ctx: AppContext): void {
   ctx.app.get("/v1/models", { preHandler: ctx.requireApiKey }, async (req) => {
     const allowed = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
-    const models = ctx.deps.repo.listEnabledModels().filter((m) => !allowed || allowed.includes(m.channelId));
+    const seen = new Set<string>();
+    const models = ctx.deps.repo
+      .listEnabledModels()
+      .filter((m) => !allowed || allowed.includes(m.channelId))
+      .filter((m) => (seen.has(m.publicName) ? false : (seen.add(m.publicName), true)));
     return {
       object: "list",
       data: models.map((m) => ({ id: m.publicName, object: "model", owned_by: "tiny-images" })),

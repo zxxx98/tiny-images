@@ -186,8 +186,13 @@ export function registerAdmin(ctx: AppContext): void {
       if (typeof b.upstreamName !== "string" || !b.upstreamName.trim()) throw httpError(400, "'upstreamName' must be a non-empty string");
       upstreamName = b.upstreamName.trim();
     }
+    let priority: number | undefined;
+    if (b.priority !== undefined) {
+      if (typeof b.priority !== "number" || !Number.isInteger(b.priority)) throw httpError(400, "'priority' must be an integer");
+      priority = b.priority;
+    }
     try {
-      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName });
+      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName, priority });
       return await reply.code(201).send(model);
     } catch (err) {
       if (err instanceof ConflictError) throw httpError(409, err.message);
@@ -198,7 +203,7 @@ export function registerAdmin(ctx: AppContext): void {
   ctx.app.patch("/admin/models/:id", { preHandler: ctx.requireAdmin }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const b = requireBody(req);
-    const patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean } = {};
+    const patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean; priority?: number } = {};
     if (b.publicName !== undefined) patch.publicName = requireStr(b, "publicName").trim();
     if (b.channelId !== undefined) {
       if (typeof b.channelId !== "number" || !Number.isInteger(b.channelId)) throw httpError(400, "'channelId' must be an integer");
@@ -206,6 +211,10 @@ export function registerAdmin(ctx: AppContext): void {
       patch.channelId = b.channelId;
     }
     if (b.upstreamName !== undefined) patch.upstreamName = requireStr(b, "upstreamName").trim();
+    if (b.priority !== undefined) {
+      if (typeof b.priority !== "number" || !Number.isInteger(b.priority)) throw httpError(400, "'priority' must be an integer");
+      patch.priority = b.priority;
+    }
     const enabled = optionalBoolean(b, "enabled");
     if (enabled !== undefined) patch.enabled = enabled;
     try {

@@ -124,6 +124,7 @@ export interface ModelMapping {
   channelId: number;
   upstreamName: string;
   enabled: boolean;
+  priority: number;
   createdAt: number;
   channelName?: string | null;
 }

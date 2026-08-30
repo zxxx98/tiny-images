@@ -116,13 +116,15 @@ describe("/admin/models", () => {
     expect(created.statusCode).toBe(201);
     expect(created.json().channelId).toBe(channelId);
 
+    // 同名映射允许重复（故障转移），可带 priority
     const dup = await app.inject({
       method: "POST",
       url: "/admin/models",
       headers: H,
-      payload: { publicName: "img-1", channelId },
+      payload: { publicName: "img-1", channelId, priority: 5 },
     });
-    expect(dup.statusCode).toBe(409);
+    expect(dup.statusCode).toBe(201);
+    expect(dup.json().priority).toBe(5);
 
     const list = await app.inject({ url: "/admin/models", headers: H });
     expect(list.json()[0].channelName).toBe("c1");

@@ -99,6 +99,11 @@ const MIGRATIONS: string[] = [
   ALTER TABLE generations ADD COLUMN user_id INTEGER;
   CREATE INDEX IF NOT EXISTS generations_user ON generations(user_id);
   `,
+  `
+  -- 同一对外模型名允许多条启用映射（按 priority 升序故障转移）
+  DROP INDEX IF EXISTS models_enabled_public_name;
+  ALTER TABLE models ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

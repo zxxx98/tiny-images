@@ -28,6 +28,7 @@ export interface ModelRow {
   channelId: number;
   upstreamName: string;
   enabled: boolean;
+  priority: number;
   createdAt: number;
 }
 
@@ -263,20 +264,13 @@ export class Repo {
 
   // ---- models ----
 
-  createModel(input: { publicName: string; channelId: number; upstreamName?: string; enabled?: boolean }): ModelRow {
+  // 同一 publicName 允许多条启用映射（按 priority 升序做故障转移），不再有唯一性约束
+  createModel(input: { publicName: string; channelId: number; upstreamName?: string; enabled?: boolean; priority?: number }): ModelRow {
     const enabled = input.enabled !== false;
-    if (enabled && this.findEnabledModel(input.publicName)) {
-      throw new ConflictError(`model '${input.publicName}' already exists among enabled models`);
-    }
-    try {
-      const res = this.db
-        .prepare("INSERT INTO models (public_name, channel_id, upstream_name, enabled, created_at) VALUES (?, ?, ?, ?, ?)")
-        .run(input.publicName, input.channelId, input.upstreamName ?? input.publicName, enabled ? 1 : 0, Date.now());
-      return this.getModel(Number(res.lastInsertRowid))!;
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new ConflictError(`model '${input.publicName}' already exists among enabled models`);
-      throw err;
-    }
+    const res = this.db
+      .prepare("INSERT INTO models (public_name, channel_id, upstream_name, enabled, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(input.publicName, input.channelId, input.upstreamName ?? input.publicName, enabled ? 1 : 0, input.priority ?? 0, Date.now());
+    return this.getModel(Number(res.lastInsertRowid))!;
   }
 
   getModel(id: number): ModelRow | null {
@@ -299,19 +293,21 @@ export class Repo {
     return rows.map((r) => this.toModel(r));
   }
 
-  updateModel(id: number, patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean }): ModelRow | null {
+  // 同名启用映射按 priority 升序（同 priority 按 id 稳定排序）返回，供路由做故障转移
+  listEnabledModelRoutes(publicName: string): ModelRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM models WHERE public_name = ? AND enabled = 1 ORDER BY priority ASC, id ASC")
+      .all(publicName) as Record<string, unknown>[];
+    return rows.map((r) => this.toModel(r));
+  }
+
+  updateModel(id: number, patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean; priority?: number }): ModelRow | null {
     const existing = this.getModel(id);
     if (!existing) return null;
     const merged = { ...existing, ...patch };
-    if (merged.enabled) {
-      const clash = this.db
-        .prepare("SELECT id FROM models WHERE public_name = ? AND enabled = 1 AND id <> ?")
-        .get(merged.publicName, id) as { id: number } | undefined;
-      if (clash) throw new ConflictError(`model '${merged.publicName}' already exists among enabled models`);
-    }
     this.db
-      .prepare("UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ? WHERE id = ?")
-      .run(merged.publicName, merged.channelId, merged.upstreamName, merged.enabled ? 1 : 0, id);
+      .prepare("UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ?, priority = ? WHERE id = ?")
+      .run(merged.publicName, merged.channelId, merged.upstreamName, merged.enabled ? 1 : 0, merged.priority, id);
     return this.getModel(id);
   }
 
@@ -327,6 +323,7 @@ export class Repo {
       channelId: Number(row.channel_id),
       upstreamName: String(row.upstream_name),
       enabled: Number(row.enabled) === 1,
+      priority: row.priority === undefined ? 0 : Number(row.priority),
       createdAt: Number(row.created_at),
     };
   }

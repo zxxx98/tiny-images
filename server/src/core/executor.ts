@@ -83,6 +83,7 @@ export class Executor {
             ? await this.deps.provider.generate(payload.req, ctx)
             : await this.deps.provider.edit(payload.req, ctx);
         this.deps.keyPool.markSuccess(key.keyId);
+        this.deps.router.markSuccess(channel.id);
         if (quotaLimited) {
           const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
           if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
@@ -97,6 +98,8 @@ export class Executor {
           this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
           continue;
         }
+        // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入渠道熔断
+        this.deps.router.markFailure(channel.id);
         this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
         throw err;
       }
@@ -105,6 +108,7 @@ export class Executor {
     const error =
       lastError ??
       new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
+    this.deps.router.markFailure(channel.id);
     this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
     throw error;
   }

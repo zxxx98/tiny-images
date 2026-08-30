@@ -34,27 +34,26 @@ describe("channels", () => {
 });
 
 describe("models", () => {
-  it("enforces unique enabled public_name", () => {
-    const c = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
-    repo.createModel({ publicName: "img-1", channelId: c.id });
-    expect(() => repo.createModel({ publicName: "img-1", channelId: c.id })).toThrow(ConflictError);
-    const m2 = repo.createModel({ publicName: "img-1", channelId: c.id, enabled: false });
-    expect(m2.enabled).toBe(false);
+  it("allows duplicate enabled public_name (failover routes ordered by priority)", () => {
+    const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
+    const c2 = repo.createChannel({ name: "b", baseUrl: "https://y/v1" });
+    const primary = repo.createModel({ publicName: "img-1", channelId: c1.id, priority: 0 });
+    const backup = repo.createModel({ publicName: "img-1", channelId: c2.id, priority: 10 });
+    const routes = repo.listEnabledModelRoutes("img-1");
+    expect(routes.map((r) => r.id)).toEqual([primary.id, backup.id]);
+    // 禁用备选后只剩主选
+    repo.updateModel(backup.id, { enabled: false });
+    expect(repo.listEnabledModelRoutes("img-1").map((r) => r.id)).toEqual([primary.id]);
+    // priority 修改生效
+    repo.updateModel(primary.id, { priority: 5 });
+    expect(repo.getModel(primary.id)?.priority).toBe(5);
   });
-  it("finds enabled by name and conflicts on duplicates among enabled", () => {
+  it("finds enabled by name", () => {
     const c = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
     const m = repo.createModel({ publicName: "img-1", channelId: c.id, upstreamName: "gpt-image-1" });
     expect(repo.findEnabledModel("img-1")?.id).toBe(m.id);
     repo.updateModel(m.id, { enabled: false });
     expect(repo.findEnabledModel("img-1")).toBeNull();
-    // 禁用后允许新建同名启用模型
-    const again = repo.createModel({ publicName: "img-1", channelId: c.id });
-    expect(again.enabled).toBe(true);
-    // 两个启用模型同名 → 冲突
-    const other = repo.createModel({ publicName: "img-2", channelId: c.id });
-    expect(() => repo.updateModel(other.id, { publicName: "img-1" })).toThrow(ConflictError);
-    // 重新启用被禁用的同名模型也冲突
-    expect(() => repo.updateModel(m.id, { enabled: true })).toThrow(ConflictError);
   });
 });
 

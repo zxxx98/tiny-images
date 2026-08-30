@@ -314,6 +314,7 @@ function ModelsTab() {
         新建映射
       </button>
       {channels.length === 0 && <p className="muted">还没有渠道。请先在「渠道」页添加并启用一个渠道，再建立模型映射。</p>}
+      <p className="muted">同一个对外 model 名可建多条映射（如主备渠道），按优先级从小到大依次尝试；某渠道连续失败会自动熔断冷却。</p>
       {editing && (
         <form className="inline-form" onSubmit={save}>
           <h3>{editing.id ? "编辑映射" : "新建映射"}</h3>
@@ -332,6 +333,15 @@ function ModelsTab() {
           </select>
           <label htmlFor="m-upstream">上游 model 名（留空则同对外名）</label>
           <input id="m-upstream" value={editing.upstreamName ?? ""} onChange={(e) => setEditing({ ...editing, upstreamName: e.target.value })} />
+
+          <label htmlFor="m-priority">优先级（数字越小越先用，用于多渠道故障转移）</label>
+          <input
+            id="m-priority"
+            type="number"
+            step={1}
+            value={editing.priority ?? 0}
+            onChange={(e) => setEditing({ ...editing, priority: Number(e.target.value) })}
+          />
           <label className="check">
             <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
           </label>
@@ -351,6 +361,7 @@ function ModelsTab() {
           <thead>
             <tr>
               <th>对外 model</th>
+              <th>优先级</th>
               <th>渠道</th>
               <th>上游 model</th>
               <th>状态</th>
@@ -361,6 +372,7 @@ function ModelsTab() {
             {models.map((m) => (
               <tr key={m.id}>
                 <td className="mono">{m.publicName}</td>
+                <td>{m.priority}</td>
                 <td>{m.channelName ?? m.channelId}</td>
                 <td className="mono">{m.upstreamName}</td>
                 <td>
