@@ -192,6 +192,17 @@ export function createJob(body: Record<string, unknown>): Promise<{ jobId: strin
   return api<{ jobId: string }>("/v1/images/jobs", { method: "POST", body });
 }
 
+export async function createEditJob(form: FormData): Promise<{ jobId: string }> {
+  const res = await fetch("/v1/images/edit-jobs", {
+    method: "POST",
+    headers: { authorization: `Bearer ${getToken()}` },
+    body: form,
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { jobId?: string; error?: { message?: string } };
+  if (!res.ok || !parsed.jobId) throw new ApiError(res.status, parsed);
+  return { jobId: parsed.jobId };
+}
+
 export function fetchJob(id: string): Promise<JobStatus> {
   return api<JobStatus>(`/v1/images/jobs/${id}`);
 }
