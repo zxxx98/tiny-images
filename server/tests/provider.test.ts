@@ -137,3 +137,12 @@ describe("OpenAICompatProvider.test", () => {
     expect((await new OpenAICompatProvider().test(channel(), "sk-x")).ok).toBe(false);
   });
 });
+
+describe("default provider registry", () => {
+  it("registers both OpenAI-compatible and AI Horde providers", async () => {
+    const module = await import("../src/providers/registry.js") as Record<string, unknown>;
+    expect(module).toHaveProperty("createDefaultProviderRegistry");
+    const registry = (module.createDefaultProviderRegistry as () => Map<string, unknown>)();
+    expect([...registry.keys()]).toEqual(["openai-compat", "ai-horde"]);
+  });
+});

@@ -1,15 +1,16 @@
 import { ModelNotFoundError, toOpenAIError } from "../core/errors.js";
+import type { FastifyRequest } from "fastify";
 import type { UnifiedEditRequest, UnifiedGenRequest } from "../core/types.js";
 import { conformImages, localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
-import { toDataItem, toImagesResponse } from "./generations.js";
+import { requestSignal, toDataItem, toImagesResponse } from "./generations.js";
 import { sseReply } from "./sse.js";
 
 type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest;
 
 export async function streamImageFlow(
   ctx: AppContext,
-  req: { callerApiKeyId?: number | null; callerUserId?: number | null },
+  req: FastifyRequest,
   reply: Parameters<typeof sseReply>[0],
   model: string,
   kind: "generate" | "edit",
@@ -20,6 +21,7 @@ export async function streamImageFlow(
   const allowedChannelIds = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
   const route = ctx.deps.router.resolve(model, allowedChannelIds);
   if (!route) throw new ModelNotFoundError(model);
+  const signal = requestSignal(req, reply);
 
   reply.hijack();
   const writer = sseReply(reply);
@@ -29,6 +31,7 @@ export async function streamImageFlow(
     callerApiKeyId: req.callerApiKeyId ?? null,
     callerUserId: req.callerUserId ?? null,
     allowedChannelIds,
+    signal,
   };
   const callerApiKeyId = req.callerApiKeyId ?? null;
   const callerUserId = req.callerUserId ?? null;
@@ -43,6 +46,7 @@ export async function streamImageFlow(
       dataDir: ctx.deps.env.dataDir,
       fileBaseUrl,
       fetchTimeoutMs: r.channel.timeoutMs,
+      signal,
     });
     images.forEach((img, index) => writer.send({ type: "image", index, ...toDataItem(img) }));
     writer.send({ type: "completed", ...toImagesResponse(r.result, images) });

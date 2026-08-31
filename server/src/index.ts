@@ -2,8 +2,7 @@ import { buildApp } from "./app.js";
 import { Executor } from "./core/executor.js";
 import { KeyPool } from "./core/keyPool.js";
 import { ModelRouter } from "./core/router.js";
-import { OpenAICompatProvider } from "./providers/openai-compat.js";
-import { createProviderRegistry } from "./providers/registry.js";
+import { createDefaultProviderRegistry } from "./providers/registry.js";
 import { loadEnv } from "./env.js";
 import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
@@ -24,7 +23,7 @@ if (seeded.created) {
 
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
-const providers = createProviderRegistry(new OpenAICompatProvider());
+const providers = createDefaultProviderRegistry();
 const executor = new Executor({ router, keyPool, providers, repo });
 const jobManager = new JobManager();
 
