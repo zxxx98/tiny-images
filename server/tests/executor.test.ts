@@ -123,7 +123,7 @@ describe("Executor", () => {
 
     await build(provider).generate("img", request, { callerApiKeyId: null });
 
-    expect(upstreamPrompt).toBe("shared style\np");
+    expect(upstreamPrompt).toBe("  shared style  \np");
     expect(request.prompt).toBe("p");
   });
 

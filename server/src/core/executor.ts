@@ -34,9 +34,8 @@ export interface ExecutorResult {
 const KEY_ROTATE_STATUSES = new Set([401, 403, 429]);
 
 export function withGlobalPrompt<T extends UnifiedGenRequest | UnifiedEditRequest>(request: T, globalPrompt: string): T {
-  const prefix = globalPrompt.trim();
-  if (!prefix) return request;
-  return { ...request, prompt: `${prefix}\n${request.prompt}` } as T;
+  if (!globalPrompt.trim()) return request;
+  return { ...request, prompt: `${globalPrompt}\n${request.prompt}` } as T;
 }
 
 export class Executor {
