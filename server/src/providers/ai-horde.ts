@@ -8,6 +8,7 @@ import type {
   UnifiedImageResult,
 } from "../core/types.js";
 import { joinUrl } from "./openai-compat.js";
+import { toHordeWebP } from "./ai-horde-images.js";
 
 const HORDE_REQUEST_FIELDS = [
   "nsfw",
@@ -54,8 +55,27 @@ export class AIHordeProvider implements ImageProvider {
     return this.run(req, ctx, signal, {});
   }
 
-  async edit(_req: UnifiedEditRequest, _ctx: CallContext): Promise<UnifiedImageResult> {
-    throw new ValidationError("AI Horde image editing is not available");
+  async edit(req: UnifiedEditRequest, ctx: CallContext): Promise<UnifiedImageResult> {
+    if (req.images.length !== 1) throw new ValidationError("AI Horde edits require exactly one image");
+    const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(ctx.channel.timeoutMs)]);
+    try {
+      const source = await toHordeWebP(req.images[0], signal);
+      const fields: Record<string, unknown> = {
+        source_image: source.base64,
+        source_processing: req.mask ? "inpainting" : "img2img",
+      };
+      if (req.mask) {
+        const mask = await toHordeWebP(req.mask, signal);
+        if (mask.width !== source.width || mask.height !== source.height) {
+          throw new ValidationError("mask dimensions must match the source image");
+        }
+        fields.source_mask = mask.base64;
+      }
+      return await this.run(req, ctx, signal, fields);
+    } catch (error) {
+      if (error instanceof ValidationError || error instanceof UpstreamError) throw error;
+      throw wrapNetworkError(error, ctx.channel.name);
+    }
   }
 
   async test(_channel: ChannelConfig, _apiKey: string | null): Promise<{ ok: boolean; message: string }> {
