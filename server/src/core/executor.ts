@@ -38,6 +38,13 @@ export function withGlobalPrompt<T extends UnifiedGenRequest | UnifiedEditReques
   return { ...request, prompt: `${globalPrompt}\n${request.prompt}` } as T;
 }
 
+function suppressPromptEchoes(result: UnifiedImageResult): UnifiedImageResult {
+  return {
+    created: result.created,
+    images: result.images.map(({ revisedPrompt: _revisedPrompt, ...image }) => image),
+  };
+}
+
 export class Executor {
   constructor(private readonly deps: ExecutorDeps) {}
 
@@ -57,7 +64,8 @@ export class Executor {
     const route = this.deps.router.resolve(publicName, opts.allowedChannelIds ?? null);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
-    const upstreamRequest = withGlobalPrompt(payload.req, this.deps.repo.getAppSettings().globalPrompt);
+    const globalPrompt = this.deps.repo.getAppSettings().globalPrompt;
+    const upstreamRequest = withGlobalPrompt(payload.req, globalPrompt);
 
     // 额度：仅普通用户且配置了 quota_total 时生效；按成功生成的图片张数扣减
     const user = opts.callerUserId ? this.deps.repo.getUser(opts.callerUserId) : null;
@@ -84,10 +92,11 @@ export class Executor {
         signal: opts.signal ?? new AbortController().signal,
       };
       try {
-        const result =
+        const upstreamResult =
           payload.kind === "generate"
             ? await this.deps.provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
             : await this.deps.provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
+        const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
         this.deps.keyPool.markSuccess(key.keyId);
         this.deps.router.markSuccess(channel.id);
         if (quotaLimited) {

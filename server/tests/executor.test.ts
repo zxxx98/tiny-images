@@ -111,7 +111,11 @@ describe("Executor", () => {
       kind: "fake",
       async generate(req) {
         upstreamPrompt = req.prompt;
-        return ok;
+        return {
+          created: 1,
+          images: [{ b64: "AA", revisedPrompt: req.prompt }],
+          raw: { prompt: req.prompt, data: [{ b64_json: "AA", revised_prompt: req.prompt }] },
+        };
       },
       async edit() {
         return ok;
@@ -121,10 +125,11 @@ describe("Executor", () => {
       },
     };
 
-    await build(provider).generate("img", request, { callerApiKeyId: null });
+    const response = await build(provider).generate("img", request, { callerApiKeyId: null });
 
     expect(upstreamPrompt).toBe("  shared style  \np");
     expect(request.prompt).toBe("p");
+    expect(response.result).toEqual({ created: 1, images: [{ b64: "AA" }] });
   });
 
   it("prepends the global prompt to edits without copying or mutating images", async () => {
