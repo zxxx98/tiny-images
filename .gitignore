@@ -4,3 +4,4 @@ data/
 web/dist/
 *.log
 web/.impeccable/
+.worktrees/
