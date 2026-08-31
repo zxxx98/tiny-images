@@ -1174,6 +1174,30 @@ details textarea {
   border-color: var(--bevel-in-border);
   box-shadow: var(--bevel-in-shadow);
 }
+.announcement-window {
+  width: min(520px, 100%);
+}
+.announcement-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+.announcement-copy {
+  margin: 0;
+  padding: 12px;
+  min-height: 96px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+.announcement-body .btn {
+  align-self: flex-end;
+  min-width: 88px;
+}
 .win-body {
   padding: 12px;
   overflow-y: auto;

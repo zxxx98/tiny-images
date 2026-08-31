@@ -6,7 +6,7 @@ import { Executor } from "../src/core/executor.js";
 import { KeyPool } from "../src/core/keyPool.js";
 import { ModelRouter } from "../src/core/router.js";
 import { UpstreamError } from "../src/core/errors.js";
-import type { CallContext, ImageProvider, UnifiedGenRequest, UnifiedImageResult } from "../src/core/types.js";
+import type { CallContext, ImageProvider, UnifiedEditRequest, UnifiedGenRequest, UnifiedImageResult } from "../src/core/types.js";
 import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
 
@@ -101,6 +101,119 @@ describe("Executor", () => {
     );
     await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({ httpStatus: 400 });
     expect(calls).toBe(1);
+  });
+
+  it("prepends the global prompt without mutating the generation request", async () => {
+    repo.updateAppSettings({ globalPrompt: "  shared style  ", announcement: "" });
+    const request = gen();
+    let upstreamPrompt = "";
+    const provider: ImageProvider = {
+      kind: "fake",
+      async generate(req) {
+        upstreamPrompt = req.prompt;
+        return {
+          created: 1,
+          images: [{ b64: "AA", revisedPrompt: req.prompt }],
+          raw: {
+            prompt: req.prompt,
+            data: [{ b64_json: "AA", revised_prompt: req.prompt }],
+            usage: { input_tokens: 12, details: { image_tokens: 4 }, unsafe_note: req.prompt },
+          },
+        };
+      },
+      async edit() {
+        return ok;
+      },
+      async test() {
+        return { ok: true, message: "" };
+      },
+    };
+
+    const response = await build(provider).generate("img", request, { callerApiKeyId: null });
+
+    expect(upstreamPrompt).toBe("  shared style  \np");
+    expect(request.prompt).toBe("p");
+    expect(response.result).toEqual({
+      created: 1,
+      images: [{ b64: "AA" }],
+      raw: { usage: { input_tokens: 12, details: { image_tokens: 4 } } },
+    });
+  });
+
+  it("prepends the global prompt to edits without copying or mutating images", async () => {
+    repo.updateAppSettings({ globalPrompt: "edit policy", announcement: "" });
+    const image = { filename: "source.png", data: Buffer.from("image"), mimeType: "image/png" };
+    const request: UnifiedEditRequest = {
+      prompt: "make it blue",
+      n: 1,
+      responseFormat: "b64_json",
+      images: [image],
+      passthrough: {},
+    };
+    let upstreamRequest: UnifiedEditRequest | null = null;
+    const provider: ImageProvider = {
+      kind: "fake",
+      async generate() {
+        return ok;
+      },
+      async edit(req) {
+        upstreamRequest = req;
+        return ok;
+      },
+      async test() {
+        return { ok: true, message: "" };
+      },
+    };
+
+    await build(provider).edit("img", request, { callerApiKeyId: null });
+
+    expect(upstreamRequest?.prompt).toBe("edit policy\nmake it blue");
+    expect(upstreamRequest?.images).toBe(request.images);
+    expect(request.prompt).toBe("make it blue");
+  });
+
+  it("leaves prompts unchanged when the global prompt is blank", async () => {
+    repo.updateAppSettings({ globalPrompt: "  \n ", announcement: "" });
+    let upstreamPrompt = "";
+    const provider: ImageProvider = {
+      kind: "fake",
+      async generate(req) {
+        upstreamPrompt = req.prompt;
+        return ok;
+      },
+      async edit() {
+        return ok;
+      },
+      async test() {
+        return { ok: true, message: "" };
+      },
+    };
+
+    await build(provider).generate("img", gen(), { callerApiKeyId: null });
+
+    expect(upstreamPrompt).toBe("p");
+  });
+
+  it("does not expose an upstream error that echoes the combined prompt", async () => {
+    repo.updateAppSettings({ globalPrompt: "secret policy", announcement: "" });
+    const provider: ImageProvider = {
+      kind: "fake",
+      async generate(req) {
+        throw new UpstreamError(400, "invalid_request_error", `invalid prompt: ${req.prompt}`, "bad_prompt");
+      },
+      async edit() {
+        return ok;
+      },
+      async test() {
+        return { ok: true, message: "" };
+      },
+    };
+
+    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((err: unknown) => err);
+
+    expect(error).toMatchObject({ httpStatus: 400, type: "invalid_request_error", code: "bad_prompt" });
+    expect((error as Error).message).not.toContain("secret policy");
+    expect((error as Error).message).not.toContain("invalid prompt");
   });
 
   it("throws ModelNotFoundError for unknown model", async () => {

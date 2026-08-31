@@ -161,6 +161,56 @@ describe("/admin/logs", () => {
   });
 });
 
+describe("settings", () => {
+  it("reads defaults and updates settings as admin", async () => {
+    const initial = await app.inject({ url: "/admin/settings", headers: H });
+    expect(initial.json()).toEqual({ globalPrompt: "", announcement: "", announcementVersion: 0 });
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: "/admin/settings",
+      headers: H,
+      payload: { globalPrompt: "house style", announcement: "Maintenance tonight" },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual({ globalPrompt: "house style", announcement: "Maintenance tonight", announcementVersion: 1 });
+
+    const repeated = await app.inject({
+      method: "PUT",
+      url: "/admin/settings",
+      headers: H,
+      payload: { globalPrompt: "new style", announcement: "Maintenance tonight" },
+    });
+    expect(repeated.json().announcementVersion).toBe(1);
+  });
+
+  it("protects admin settings while exposing only the announcement to users", async () => {
+    repo.updateAppSettings({ globalPrompt: "secret prefix", announcement: "Maintenance tonight" });
+    repo.createUser({ email: "user@local", passwordHash: hashPassword("user-pass"), role: "user", quotaTotal: null });
+    const login = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email: "user@local", password: "user-pass" } });
+    const userHeaders = { authorization: `Bearer ${(login.json() as { token: string }).token}` };
+
+    expect((await app.inject({ url: "/admin/settings" })).statusCode).toBe(401);
+    expect((await app.inject({ url: "/admin/settings", headers: userHeaders })).statusCode).toBe(403);
+    expect((await app.inject({ url: "/v1/announcement" })).statusCode).toBe(401);
+
+    const announcement = await app.inject({ url: "/v1/announcement", headers: userHeaders });
+    expect(announcement.statusCode).toBe(200);
+    expect(announcement.json()).toEqual({ announcement: "Maintenance tonight", version: 1 });
+    expect(announcement.json()).not.toHaveProperty("globalPrompt");
+  });
+
+  it("rejects non-string setting values", async () => {
+    const bad = await app.inject({
+      method: "PUT",
+      url: "/admin/settings",
+      headers: H,
+      payload: { globalPrompt: 42, announcement: "text" },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+});
+
 describe("auth", () => {
   it("401 without token", async () => {
     expect((await app.inject({ url: "/admin/channels" })).statusCode).toBe(401);

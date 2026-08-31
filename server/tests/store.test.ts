@@ -78,6 +78,37 @@ describe("api keys", () => {
   });
 });
 
+describe("application settings", () => {
+  it("returns empty application settings by default", () => {
+    expect(repo.getAppSettings()).toEqual({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+    });
+  });
+
+  it("persists settings and versions only changed announcements", () => {
+    expect(repo.updateAppSettings({ globalPrompt: "house style", announcement: "hello" })).toEqual({
+      globalPrompt: "house style",
+      announcement: "hello",
+      announcementVersion: 1,
+    });
+    expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "hello" }).announcementVersion).toBe(1);
+    expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "changed" }).announcementVersion).toBe(2);
+  });
+
+  it("keeps application settings after reopening the database", () => {
+    repo.updateAppSettings({ globalPrompt: "persistent style", announcement: "persistent notice" });
+    repo.close();
+    repo = new Repo(openDb(dir));
+    expect(repo.getAppSettings()).toEqual({
+      globalPrompt: "persistent style",
+      announcement: "persistent notice",
+      announcementVersion: 1,
+    });
+  });
+});
+
 describe("logs", () => {
   it("inserts, lists recent, prunes to 1000", () => {
     for (let i = 0; i < 1005; i++) {

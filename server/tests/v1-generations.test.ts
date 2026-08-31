@@ -108,6 +108,33 @@ describe("POST /v1/images/generations", () => {
     expect(file.statusCode).toBe(404); // files 路由在 Task 13 之前未注册，仅验证 url 形态
   });
 
+  it("keeps safe usage while hiding global prompt echoes from responses and history", async () => {
+    let upstreamPrompt = "";
+    upstream.post("/v1/images/generations", async (req, reply) => {
+      upstreamPrompt = (req.body as { prompt: string }).prompt;
+      return reply.send({
+        created: 1,
+        prompt: upstreamPrompt,
+        data: [{ b64_json: PNG_B64, revised_prompt: upstreamPrompt }],
+        usage: { total_tokens: 12, note: upstreamPrompt },
+      });
+    });
+    await start();
+    repo.updateAppSettings({ globalPrompt: "secret policy", announcement: "" });
+
+    const res = await app.inject({ method: "POST", url: "/v1/images/generations", payload: { model: "img-1", prompt: "cat" } });
+
+    expect(upstreamPrompt).toBe("secret policy\ncat");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ data: [{ b64_json: PNG_B64 }], usage: { total_tokens: 12 } });
+    expect(res.json().data[0].revised_prompt).toBeUndefined();
+    expect(res.json().prompt).toBeUndefined();
+    expect(res.json().usage.note).toBeUndefined();
+    const history = repo.listGenerations({ admin: true, userId: null, apiKeyId: null }, null, 1)[0];
+    expect(history.prompt).toBe("cat");
+    expect(history.images).not.toContain("secret policy");
+  });
+
   it("400 on invalid body", async () => {
     await start();
     expect((await app.inject({ method: "POST", url: "/v1/images/generations", payload: { model: "img-1" } })).statusCode).toBe(400);
