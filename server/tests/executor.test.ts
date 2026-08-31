@@ -141,6 +141,7 @@ describe("Executor", () => {
         return {
           created: 1,
           images: [{ b64: "AA", revisedPrompt: req.prompt }],
+          includeRawResponseFields: false,
           raw: {
             prompt: req.prompt,
             data: [{ b64_json: "AA", revised_prompt: req.prompt }],
@@ -164,7 +165,24 @@ describe("Executor", () => {
       created: 1,
       images: [{ b64: "AA" }],
       raw: { usage: { input_tokens: 12, details: { image_tokens: 4 } } },
+      includeRawResponseFields: false,
     });
+  });
+
+  it("does not rotate keys when an accepted async task is unsafe to retry", async () => {
+    repo.updateAppSettings({ globalPrompt: "shared style", announcement: "" });
+    let calls = 0;
+    const provider = fakeProvider([
+      async () => {
+        calls++;
+        throw new UpstreamError(429, "rate_limit_error", "poll throttled", null, false);
+      },
+    ]);
+
+    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((value: unknown) => value);
+
+    expect(calls).toBe(1);
+    expect(error).toMatchObject({ httpStatus: 429, keyRetrySafe: false });
   });
 
   it("prepends the global prompt to edits without copying or mutating images", async () => {

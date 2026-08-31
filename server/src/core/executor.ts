@@ -57,6 +57,7 @@ function suppressPromptEchoes(result: UnifiedImageResult): UnifiedImageResult {
     created: result.created,
     images: result.images.map(({ revisedPrompt: _revisedPrompt, ...image }) => image),
     ...(usage !== undefined ? { raw: { usage } } : {}),
+    ...(result.includeRawResponseFields !== undefined ? { includeRawResponseFields: result.includeRawResponseFields } : {}),
   };
 }
 
@@ -67,6 +68,7 @@ function suppressPromptEchoedByError(error: unknown, channelName: string): unkno
     error.type,
     `channel '${channelName}' rejected the upstream request`,
     error.code,
+    error.keyRetrySafe,
   );
 }
 
@@ -134,7 +136,7 @@ export class Executor {
         return { result, channel, latencyMs };
       } catch (err) {
         lastError = err;
-        const rotate = err instanceof UpstreamError && KEY_ROTATE_STATUSES.has(err.httpStatus);
+        const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
         if (rotate) {
           this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
           continue;

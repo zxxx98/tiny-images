@@ -78,6 +78,7 @@ export interface UnifiedImageResult {
   created: number;
   images: UnifiedImage[];
   raw?: unknown;
+  includeRawResponseFields?: boolean;
 }
 
 export interface CallContext {
