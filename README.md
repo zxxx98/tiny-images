@@ -160,4 +160,5 @@ web/src        React：Login / Playground / Admin
 
 - 内置支持 OpenAI 兼容上游和 AI Horde；其他非兼容协议仍需实现新的 Provider。
 - 启用中的对外 model 名全局唯一（不做同 model 多渠道切换）。
-- `request_logs` 仅保留最近 1000 条；生成图缓存 TTL 24 小时。
+- `request_logs` 仅保留最近 50 条。
+- 生成历史记录保留 7 天；历史图片文件仍按 24 小时 TTL 清理，图片过期后可继续查看 prompt 并重新生成。
