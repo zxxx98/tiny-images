@@ -99,7 +99,12 @@ describe("POST /v1/images/jobs", () => {
       reply.send({ created: 42, data: [{ b64_json: PNG_B64, revised_prompt: "rev" }] }),
     );
     await start();
-    const created = await app.inject({ method: "POST", url: "/v1/images/jobs", headers: auth(), payload: { model: "img-1", prompt: "cat" } });
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/images/jobs",
+      headers: auth(),
+      payload: { model: "img-1", prompt: "cat", horde: { shared: false, params: { seed: "7" } } },
+    });
     expect(created.statusCode).toBe(200);
     const { jobId } = created.json();
     const body = await waitJob(jobId);
@@ -112,6 +117,7 @@ describe("POST /v1/images/jobs", () => {
     const rows = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10);
     expect(rows[0].status).toBe("ok");
     expect(rows[0].prompt).toBe("cat");
+    expect(JSON.parse(rows[0].params).horde).toEqual({ shared: false, params: { seed: "7" } });
     expect(JSON.parse(rows[0].images)[0].file).toBe(images[0].file);
   });
 

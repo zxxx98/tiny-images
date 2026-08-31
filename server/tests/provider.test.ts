@@ -66,6 +66,19 @@ describe("OpenAICompatProvider.generate", () => {
     expect(r.images).toEqual([{ b64: "QUJD", revisedPrompt: "a big cat" }]);
   });
 
+  it("does not forward provider-specific Horde options", async () => {
+    let seen: Record<string, unknown> = {};
+    upstream.post("/v1/images/generations", async (req, reply) => {
+      seen = req.body as Record<string, unknown>;
+      return reply.send({ created: 1, data: [] });
+    });
+    await start();
+
+    await new OpenAICompatProvider().generate(gen({ providerOptions: { horde: { nsfw: true } } }), ctx());
+
+    expect(seen).not.toHaveProperty("horde");
+  });
+
   it("parses url responses and preserves extra top-level fields in raw", async () => {
     upstream.post("/v1/images/generations", async (_req, reply) =>
       reply.send({ created: 1, data: [{ url: "http://x/y.png" }], usage: { total: 1 } }),

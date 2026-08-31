@@ -1,4 +1,5 @@
 import { ValidationError } from "../core/errors.js";
+import type { AIHordeOptions } from "../core/types.js";
 
 export interface CommonImageFields {
   n: number;
@@ -6,10 +7,54 @@ export interface CommonImageFields {
   responseFormat: "url" | "b64_json" | "auto";
   stream: boolean;
   passthrough: Record<string, unknown>;
+  horde?: AIHordeOptions;
 }
 
 const SIZE_RE = /^(\d{3,4}x\d{3,4}|auto)$/;
-const COMMON_FIELDS = new Set(["model", "prompt", "n", "size", "quality", "response_format", "stream"]);
+const COMMON_FIELDS = new Set(["model", "prompt", "n", "size", "quality", "response_format", "stream", "horde"]);
+const HORDE_BOOLEAN_FIELDS = new Set([
+  "nsfw",
+  "censor_nsfw",
+  "allow_downgrade",
+  "shared",
+  "trusted_workers",
+  "slow_workers",
+  "extra_slow_workers",
+  "disable_batching",
+  "replacement_filter",
+  "dry_run",
+]);
+const HORDE_FIELDS = new Set([...HORDE_BOOLEAN_FIELDS, "proxied_account", "params"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateHorde(value: unknown): AIHordeOptions | undefined {
+  if (value === undefined) return undefined;
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      throw new ValidationError("'horde' must be a valid JSON object");
+    }
+  }
+  if (!isRecord(parsed)) throw new ValidationError("'horde' must be an object");
+  for (const [field, fieldValue] of Object.entries(parsed)) {
+    if (!HORDE_FIELDS.has(field)) throw new ValidationError(`unsupported horde field '${field}'`);
+    if (HORDE_BOOLEAN_FIELDS.has(field) && typeof fieldValue !== "boolean") {
+      throw new ValidationError(`'horde.${field}' must be a boolean`);
+    }
+  }
+  if (parsed.proxied_account !== undefined && typeof parsed.proxied_account !== "string") {
+    throw new ValidationError("'horde.proxied_account' must be a string");
+  }
+  if (parsed.params !== undefined && !isRecord(parsed.params)) {
+    throw new ValidationError("'horde.params' must be an object");
+  }
+  return parsed as AIHordeOptions;
+}
 
 export function validateCommonFields(b: Record<string, unknown>): CommonImageFields {
   let n = 1;
@@ -41,7 +86,8 @@ export function validateCommonFields(b: Record<string, unknown>): CommonImageFie
   for (const [k, v] of Object.entries(b)) {
     if (!COMMON_FIELDS.has(k)) passthrough[k] = v;
   }
-  return { n, size: b.size as string | undefined, responseFormat, stream, passthrough };
+  const horde = validateHorde(b.horde);
+  return { n, size: b.size as string | undefined, responseFormat, stream, passthrough, ...(horde ? { horde } : {}) };
 }
 
 export function requireString(b: Record<string, unknown>, field: string): string {

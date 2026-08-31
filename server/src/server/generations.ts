@@ -25,6 +25,7 @@ export function validateGenBody(body: unknown): { model: string; req: UnifiedGen
       quality: b.quality as string | undefined,
       responseFormat: common.responseFormat,
       passthrough: common.passthrough,
+      ...(common.horde ? { providerOptions: { horde: common.horde } } : {}),
     },
   };
 }
