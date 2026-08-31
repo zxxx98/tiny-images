@@ -25,6 +25,7 @@ export function validateGenBody(body: unknown): { model: string; req: UnifiedGen
       quality: b.quality as string | undefined,
       responseFormat: common.responseFormat,
       passthrough: common.passthrough,
+      ...(common.horde ? { providerOptions: { horde: common.horde } } : {}),
     },
   };
 }
@@ -39,7 +40,7 @@ export function toDataItem(img: UnifiedImage): Record<string, unknown> {
 
 export function toImagesResponse(result: UnifiedImageResult, images: UnifiedImage[]): Record<string, unknown> {
   const body: Record<string, unknown> = { created: result.created, data: images.map(toDataItem) };
-  if (result.raw && typeof result.raw === "object") {
+  if (result.includeRawResponseFields !== false && result.raw && typeof result.raw === "object") {
     for (const [k, v] of Object.entries(result.raw as Record<string, unknown>)) {
       if (k === "created" || k === "data") continue;
       body[k] = v;
@@ -57,9 +58,11 @@ export function fileBaseUrlFor(ctx: AppContext, req: FastifyRequest): string {
 
 export function requestSignal(req: FastifyRequest, reply: FastifyReply): AbortSignal {
   const ac = new AbortController();
-  req.raw.on("close", () => {
+  const abortIfOpen = () => {
     if (!reply.raw.writableEnded) ac.abort(new Error("client disconnected"));
-  });
+  };
+  req.raw.on("aborted", abortIfOpen);
+  reply.raw.on("close", abortIfOpen);
   return ac.signal;
 }
 
@@ -73,11 +76,12 @@ export async function finishSync(
   kind: "generate" | "edit",
   payload: UnifiedPayload,
 ): Promise<unknown> {
+  const signal = requestSignal(req, reply);
   const routeOpts = {
     callerApiKeyId: req.callerApiKeyId ?? null,
     callerUserId: req.callerUserId ?? null,
     allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
-    signal: requestSignal(req, reply),
+    signal,
   };
   const r =
     kind === "generate"
@@ -89,7 +93,7 @@ export async function finishSync(
     dataDir: ctx.deps.env.dataDir,
     fileBaseUrl: fileBaseUrlFor(ctx, req),
     fetchTimeoutMs: r.channel.timeoutMs,
-    signal: requestSignal(req, reply),
+    signal,
   });
   reply.header("x-tiny-channel", r.channel.name);
   reply.header("x-tiny-latency-ms", r.latencyMs);

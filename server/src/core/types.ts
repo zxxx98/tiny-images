@@ -1,9 +1,10 @@
 export type EditMode = "auto" | "multipart" | "json-base64";
+export type ChannelType = "openai-compat" | "ai-horde";
 
 export interface ChannelConfig {
   id: number;
   name: string;
-  type: string; // "openai-compat"
+  type: ChannelType;
   baseUrl: string;
   timeoutMs: number;
   editMode: EditMode;
@@ -19,6 +20,25 @@ export interface ModelMapping {
   enabled: boolean;
 }
 
+export interface AIHordeOptions {
+  nsfw?: boolean;
+  censor_nsfw?: boolean;
+  allow_downgrade?: boolean;
+  shared?: boolean;
+  trusted_workers?: boolean;
+  slow_workers?: boolean;
+  extra_slow_workers?: boolean;
+  disable_batching?: boolean;
+  replacement_filter?: boolean;
+  dry_run?: boolean;
+  proxied_account?: string;
+  params?: Record<string, unknown>;
+}
+
+export interface ProviderOptions {
+  horde?: AIHordeOptions;
+}
+
 export interface UnifiedGenRequest {
   prompt: string;
   n: number;
@@ -27,6 +47,7 @@ export interface UnifiedGenRequest {
   /** "auto" = 客户端未指定，保持上游返回的原生格式 */
   responseFormat: "url" | "b64_json" | "auto";
   passthrough: Record<string, unknown>;
+  providerOptions?: ProviderOptions;
 }
 
 export interface IncomingImage {
@@ -44,6 +65,7 @@ export interface UnifiedEditRequest {
   images: IncomingImage[];
   mask?: IncomingImage;
   passthrough: Record<string, unknown>;
+  providerOptions?: ProviderOptions;
 }
 
 export interface UnifiedImage {
@@ -56,6 +78,7 @@ export interface UnifiedImageResult {
   created: number;
   images: UnifiedImage[];
   raw?: unknown;
+  includeRawResponseFields?: boolean;
 }
 
 export interface CallContext {

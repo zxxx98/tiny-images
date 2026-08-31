@@ -48,6 +48,7 @@ function genParams(genReq: UnifiedGenRequest): string {
     quality: genReq.quality,
     responseFormat: genReq.responseFormat,
     passthrough: genReq.passthrough,
+    horde: genReq.providerOptions?.horde,
   });
 }
 
@@ -57,6 +58,7 @@ function editParams(editReq: UnifiedEditRequest): string {
     size: editReq.size,
     responseFormat: editReq.responseFormat,
     passthrough: editReq.passthrough,
+    horde: editReq.providerOptions?.horde,
   });
 }
 

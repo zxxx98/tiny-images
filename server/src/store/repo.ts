@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { EditMode } from "../core/types.js";
+import type { ChannelType, EditMode } from "../core/types.js";
 
 export interface ChannelRow {
   id: number;
   name: string;
-  type: string;
+  type: ChannelType;
   baseUrl: string;
   timeoutMs: number;
   editMode: EditMode;
@@ -117,6 +117,7 @@ export class ConflictError extends Error {
 
 export interface ChannelInput {
   name: string;
+  type?: ChannelType;
   baseUrl: string;
   timeoutMs?: number;
   editMode?: EditMode;
@@ -188,10 +189,11 @@ export class Repo {
       const res = this.db
         .prepare(
           `INSERT INTO channels (name, type, base_url, timeout_ms, edit_mode, extra_headers, enabled, created_at)
-           VALUES (?, 'openai-compat', ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.name,
+          input.type ?? "openai-compat",
           input.baseUrl,
           input.timeoutMs ?? 120000,
           input.editMode ?? "auto",
@@ -222,8 +224,8 @@ export class Repo {
     const merged = { ...existing, ...patch };
     try {
       this.db
-        .prepare("UPDATE channels SET name = ?, base_url = ?, timeout_ms = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
-        .run(merged.name, merged.baseUrl, merged.timeoutMs, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
+        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
+        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`channel name '${merged.name}' already exists`);
       throw err;
@@ -240,7 +242,7 @@ export class Repo {
     return {
       id: Number(row.id),
       name: String(row.name),
-      type: String(row.type),
+      type: String(row.type) as ChannelType,
       baseUrl: String(row.base_url),
       timeoutMs: Number(row.timeout_ms),
       editMode: String(row.edit_mode) as EditMode,

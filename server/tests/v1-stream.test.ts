@@ -10,6 +10,9 @@ import { ModelRouter } from "../src/core/router.js";
 import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
 import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
+import { EventEmitter } from "node:events";
+import { requestSignal } from "../src/server/generations.js";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 let upstream: ReturnType<typeof Fastify>;
@@ -35,13 +38,14 @@ beforeEach(async () => {
   const provider = new OpenAICompatProvider();
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
+  const providers = new Map([["openai-compat", provider]]);
   app = await buildApp({
     env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     logger: false,
     webDist: null,
   });
@@ -118,5 +122,20 @@ describe("POST /v1/images/generations stream=true", () => {
     expect(res.headers["content-type"]).toContain("application/json");
     expect(res.statusCode).toBe(404);
     expect(res.json().error.code).toBe("model_not_found");
+  });
+});
+
+describe("requestSignal", () => {
+  it("aborts when the response socket closes before completion", () => {
+    const requestRaw = new EventEmitter();
+    const responseRaw = Object.assign(new EventEmitter(), { writableEnded: false });
+    const signal = requestSignal(
+      { raw: requestRaw } as unknown as FastifyRequest,
+      { raw: responseRaw } as unknown as FastifyReply,
+    );
+
+    responseRaw.emit("close");
+
+    expect(signal.aborted).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { buildApp } from "./app.js";
 import { Executor } from "./core/executor.js";
 import { KeyPool } from "./core/keyPool.js";
 import { ModelRouter } from "./core/router.js";
-import { OpenAICompatProvider } from "./providers/openai-compat.js";
+import { createDefaultProviderRegistry } from "./providers/registry.js";
 import { loadEnv } from "./env.js";
 import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
@@ -23,8 +23,8 @@ if (seeded.created) {
 
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
-const provider = new OpenAICompatProvider();
-const executor = new Executor({ router, keyPool, provider, repo });
+const providers = createDefaultProviderRegistry();
+const executor = new Executor({ router, keyPool, providers, repo });
 const jobManager = new JobManager();
 
 // 内存 job 随进程消失，遗留的 pending 历史记录标记为失败
@@ -36,7 +36,7 @@ const app = await buildApp({
   repo,
   router,
   keyPool,
-  provider,
+  providers,
   executor,
   jobManager,
   logger: true,

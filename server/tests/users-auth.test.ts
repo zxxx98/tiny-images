@@ -24,13 +24,14 @@ beforeEach(async () => {
   const provider = new OpenAICompatProvider();
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
+  const providers = new Map([["openai-compat", provider]]);
   app = await buildApp({
     env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     logger: false,
     webDist: null,
   });
@@ -94,10 +95,11 @@ describe("first-run setup", () => {
     const provider = new OpenAICompatProvider();
     const router = new ModelRouter(repo2);
     const keyPool = new KeyPool(repo2);
+    const providers = new Map([["openai-compat", provider]]);
     const app2 = await buildApp({
       env: { port: 0, dataDir: dir2, publicBaseUrl: null },
-      repo: repo2, router, keyPool, provider,
-      executor: new Executor({ router, keyPool, provider, repo2 }),
+      repo: repo2, router, keyPool, providers,
+      executor: new Executor({ router, keyPool, providers, repo: repo2 }),
       logger: false, webDist: null,
     });
     try {

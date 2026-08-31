@@ -3,17 +3,17 @@ import type { KeyPool } from "./keyPool.js";
 import type { ModelRouter } from "./router.js";
 import type {
   CallContext,
-  ImageProvider,
   UnifiedEditRequest,
   UnifiedGenRequest,
   UnifiedImageResult,
 } from "./types.js";
 import type { ChannelRow, Repo } from "../store/repo.js";
+import { providerFor, type ProviderRegistry } from "../providers/registry.js";
 
 export interface ExecutorDeps {
   router: ModelRouter;
   keyPool: KeyPool;
-  provider: ImageProvider;
+  providers: ProviderRegistry;
   repo: Repo;
   keyRetryCooldownMs?: number;
 }
@@ -57,6 +57,7 @@ function suppressPromptEchoes(result: UnifiedImageResult): UnifiedImageResult {
     created: result.created,
     images: result.images.map(({ revisedPrompt: _revisedPrompt, ...image }) => image),
     ...(usage !== undefined ? { raw: { usage } } : {}),
+    ...(result.includeRawResponseFields !== undefined ? { includeRawResponseFields: result.includeRawResponseFields } : {}),
   };
 }
 
@@ -67,6 +68,7 @@ function suppressPromptEchoedByError(error: unknown, channelName: string): unkno
     error.type,
     `channel '${channelName}' rejected the upstream request`,
     error.code,
+    error.keyRetrySafe,
   );
 }
 
@@ -89,6 +91,7 @@ export class Executor {
     const route = this.deps.router.resolve(publicName, opts.allowedChannelIds ?? null);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
+    const provider = providerFor(this.deps.providers, channel.type);
     const globalPrompt = this.deps.repo.getAppSettings().globalPrompt;
     const upstreamRequest = withGlobalPrompt(payload.req, globalPrompt);
 
@@ -119,8 +122,8 @@ export class Executor {
       try {
         const upstreamResult =
           payload.kind === "generate"
-            ? await this.deps.provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
-            : await this.deps.provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
+            ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
+            : await provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
         const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
         this.deps.keyPool.markSuccess(key.keyId);
         this.deps.router.markSuccess(channel.id);
@@ -133,7 +136,7 @@ export class Executor {
         return { result, channel, latencyMs };
       } catch (err) {
         lastError = err;
-        const rotate = err instanceof UpstreamError && KEY_ROTATE_STATUSES.has(err.httpStatus);
+        const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
         if (rotate) {
           this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
           continue;

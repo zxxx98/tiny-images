@@ -4,6 +4,7 @@ export class UpstreamError extends Error {
     public readonly type: string,
     message: string,
     public readonly code: string | null = null,
+    public readonly keyRetrySafe = true,
   ) {
     super(message);
     this.name = "UpstreamError";

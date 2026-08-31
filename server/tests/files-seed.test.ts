@@ -40,6 +40,7 @@ describe("seedIfEmpty", () => {
       `
 channels:
   - name: openai
+    type: ai-horde
     baseUrl: https://api.openai.com/v1
     keys: [sk-a, sk-b]
     timeoutMs: 90000
@@ -51,6 +52,7 @@ models:
     seedIfEmpty(dir, repo);
     const c = repo.listChannels()[0];
     expect(c.name).toBe("openai");
+    expect(c.type).toBe("ai-horde");
     expect(c.timeoutMs).toBe(90000);
     expect(repo.listKeys(c.id)).toHaveLength(2);
     expect(repo.listModels()[0].publicName).toBe("gpt-image-1");
@@ -71,13 +73,14 @@ describe("GET /files/:name", () => {
   it("serves generated files and rejects bad names", async () => {
     const router = new ModelRouter(repo);
     const keyPool = new KeyPool(repo);
+    const providers = new Map([["openai-compat", provider]]);
     const app = await buildApp({
       env: { port: 0, dataDir: dir, publicBaseUrl: null },
       repo,
       router,
       keyPool,
-      provider,
-      executor: new Executor({ router, keyPool, provider, repo }),
+      providers,
+      executor: new Executor({ router, keyPool, providers, repo }),
       logger: false,
       webDist: null,
     });

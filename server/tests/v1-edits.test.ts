@@ -60,13 +60,14 @@ beforeEach(async () => {
   const provider = new OpenAICompatProvider();
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
+  const providers = new Map([["openai-compat", provider]]);
   app = await buildApp({
     env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     logger: false,
     webDist: null,
   });
@@ -114,6 +115,7 @@ describe("POST /v1/images/edits", () => {
     const fd = makeForm();
     fd.append("response_format", "url");
     fd.append("background", "opaque");
+    fd.append("horde", JSON.stringify({ shared: false, params: { seed: "7" } }));
     fd.append("image", new Blob([PNG_BUF], { type: "image/png" }), "b.png");
     fd.append("mask", new Blob([PNG_BUF], { type: "image/png" }), "mask.png");
 
@@ -121,6 +123,7 @@ describe("POST /v1/images/edits", () => {
 
     expect(res.statusCode).toBe(200);
     expect(seen.lastFields).toMatchObject({ prompt: "make it blue", background: "opaque" });
+    expect(seen.lastFields).not.toHaveProperty("horde");
     expect(seen.lastFiles).toEqual(["image", "image", "mask"]);
     expect(res.json().data[0].url).toMatch(/\/files\/[0-9a-f]{32}\.png$/);
   });

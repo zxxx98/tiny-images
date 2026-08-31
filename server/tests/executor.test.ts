@@ -39,9 +39,36 @@ beforeEach(() => {
   repo.createKey(channelId, "sk-2");
 });
 const build = (provider: ImageProvider) =>
-  new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), provider, repo });
+  new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers: new Map([["openai-compat", provider]]), repo });
 
 describe("Executor", () => {
+  it("selects the provider from channel.type", async () => {
+    repo.updateChannel(channelId, { type: "ai-horde" });
+    let openaiCalls = 0;
+    let hordeCalls = 0;
+    const openai = fakeProvider([async () => { openaiCalls++; return ok; }]);
+    const horde = { ...fakeProvider([async () => { hordeCalls++; return ok; }]), kind: "ai-horde" };
+    const providers = new Map<string, ImageProvider>([["openai-compat", openai], ["ai-horde", horde]]);
+    const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
+
+    await ex.generate("img", gen(), { callerApiKeyId: null });
+
+    expect(hordeCalls).toBe(1);
+    expect(openaiCalls).toBe(0);
+  });
+
+  it("rejects an unregistered channel type without fallback", async () => {
+    repo.updateChannel(channelId, { type: "ai-horde" });
+    const openai = { ...fakeProvider([async () => ok]), kind: "openai-compat" };
+    const providers = new Map<string, ImageProvider>([["openai-compat", openai]]);
+    const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
+
+    await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({
+      httpStatus: 500,
+      type: "configuration_error",
+    });
+  });
+
   it("succeeds on first key and logs ok", async () => {
     const ex = build(
       fakeProvider([
@@ -114,6 +141,7 @@ describe("Executor", () => {
         return {
           created: 1,
           images: [{ b64: "AA", revisedPrompt: req.prompt }],
+          includeRawResponseFields: false,
           raw: {
             prompt: req.prompt,
             data: [{ b64_json: "AA", revised_prompt: req.prompt }],
@@ -137,7 +165,24 @@ describe("Executor", () => {
       created: 1,
       images: [{ b64: "AA" }],
       raw: { usage: { input_tokens: 12, details: { image_tokens: 4 } } },
+      includeRawResponseFields: false,
     });
+  });
+
+  it("does not rotate keys when an accepted async task is unsafe to retry", async () => {
+    repo.updateAppSettings({ globalPrompt: "shared style", announcement: "" });
+    let calls = 0;
+    const provider = fakeProvider([
+      async () => {
+        calls++;
+        throw new UpstreamError(429, "rate_limit_error", "poll throttled", null, false);
+      },
+    ]);
+
+    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((value: unknown) => value);
+
+    expect(calls).toBe(1);
+    expect(error).toMatchObject({ httpStatus: 429, keyRetrySafe: false });
   });
 
   it("prepends the global prompt to edits without copying or mutating images", async () => {

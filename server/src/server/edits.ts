@@ -49,6 +49,7 @@ export async function parseEditMultipart(req: FastifyRequest): Promise<ParsedEdi
       images,
       mask,
       passthrough: common.passthrough,
+      ...(common.horde ? { providerOptions: { horde: common.horde } } : {}),
     },
   };
 }
