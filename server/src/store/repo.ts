@@ -125,7 +125,7 @@ export interface ChannelInput {
   enabled?: boolean;
 }
 
-const LOG_KEEP = 1000;
+const LOG_KEEP = 50;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export function quotaDayAt(timestamp: number): string {

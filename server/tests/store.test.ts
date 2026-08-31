@@ -116,13 +116,14 @@ describe("application settings", () => {
 });
 
 describe("logs", () => {
-  it("inserts, lists recent, prunes to 1000", () => {
-    for (let i = 0; i < 1005; i++) {
+  it("inserts, lists recent, prunes to 50", () => {
+    for (let i = 0; i < 55; i++) {
       repo.insertLog({ ts: i, model: "m", channelId: 1, apiKeyId: null, status: "ok", httpStatus: 200, latencyMs: 10, errorMessage: null });
     }
-    const logs = repo.recentLogs(2000);
-    expect(logs).toHaveLength(1000);
-    expect(logs[0].ts).toBe(1004);
+    const logs = repo.recentLogs(100);
+    expect(logs).toHaveLength(50);
+    expect(logs[0].ts).toBe(54);
+    expect(logs.at(-1)?.ts).toBe(5);
   });
 });
 
