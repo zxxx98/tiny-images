@@ -110,6 +110,21 @@ describe("POST /v1/images/edits", () => {
     expect(repo.recentLogs(1)[0].status).toBe("ok");
   });
 
+  it("shared multipart parsing preserves edit fields and files", async () => {
+    const fd = makeForm();
+    fd.append("response_format", "url");
+    fd.append("background", "opaque");
+    fd.append("image", new Blob([PNG_BUF], { type: "image/png" }), "b.png");
+    fd.append("mask", new Blob([PNG_BUF], { type: "image/png" }), "mask.png");
+
+    const res = await injectForm(fd);
+
+    expect(res.statusCode).toBe(200);
+    expect(seen.lastFields).toMatchObject({ prompt: "make it blue", background: "opaque" });
+    expect(seen.lastFiles).toEqual(["image", "image", "mask"]);
+    expect(res.json().data[0].url).toMatch(/\/files\/[0-9a-f]{32}\.png$/);
+  });
+
   it("auto mode: falls back to json-base64 when upstream rejects multipart", async () => {
     upstreamMode = "json-only";
     const res = await injectForm(makeForm());

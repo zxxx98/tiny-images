@@ -6,34 +6,42 @@ import { extractHistoryImages, fileBaseUrlFor, finishSync, recordGeneration } fr
 import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
 
-export function registerEdits(ctx: AppContext): void {
-  ctx.app.post("/v1/images/edits", { preHandler: ctx.requireApiKey }, async (req, reply) => {
-    if (!req.isMultipart()) {
-      throw new ValidationError("request must be multipart/form-data");
-    }
-    const fields: Record<string, unknown> = {};
-    const images: IncomingImage[] = [];
-    let mask: IncomingImage | undefined;
-    for await (const part of req.parts()) {
-      if (part.type === "file") {
-        const img: IncomingImage = {
-          filename: part.filename || "image.png",
-          data: await part.toBuffer(),
-          mimeType: part.mimetype || "image/png",
-        };
-        if (part.fieldname === "image") images.push(img);
-        else if (part.fieldname === "mask") mask = img;
-        // 其他字段名的文件忽略
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-    if (images.length === 0) throw new ValidationError("'image' file is required");
+export interface ParsedEditRequest {
+  model: string;
+  editReq: UnifiedEditRequest;
+  stream: boolean;
+}
 
-    const model = requireString(fields, "model");
-    const prompt = requireString(fields, "prompt");
-    const common = validateCommonFields(fields);
-    const editReq: UnifiedEditRequest = {
+export async function parseEditMultipart(req: FastifyRequest): Promise<ParsedEditRequest> {
+  if (!req.isMultipart()) {
+    throw new ValidationError("request must be multipart/form-data");
+  }
+  const fields: Record<string, unknown> = {};
+  const images: IncomingImage[] = [];
+  let mask: IncomingImage | undefined;
+  for await (const part of req.parts()) {
+    if (part.type === "file") {
+      const image: IncomingImage = {
+        filename: part.filename || "image.png",
+        data: await part.toBuffer(),
+        mimeType: part.mimetype || "image/png",
+      };
+      if (part.fieldname === "image") images.push(image);
+      else if (part.fieldname === "mask") mask = image;
+      // 其他字段名的文件忽略
+    } else {
+      fields[part.fieldname] = part.value;
+    }
+  }
+  if (images.length === 0) throw new ValidationError("'image' file is required");
+
+  const model = requireString(fields, "model");
+  const prompt = requireString(fields, "prompt");
+  const common = validateCommonFields(fields);
+  return {
+    model,
+    stream: common.stream,
+    editReq: {
       prompt,
       n: common.n,
       size: common.size,
@@ -41,9 +49,15 @@ export function registerEdits(ctx: AppContext): void {
       images,
       mask,
       passthrough: common.passthrough,
-    };
+    },
+  };
+}
+
+export function registerEdits(ctx: AppContext): void {
+  ctx.app.post("/v1/images/edits", { preHandler: ctx.requireApiKey }, async (req, reply) => {
+    const { model, editReq, stream } = await parseEditMultipart(req);
     const started = Date.now();
-    if (common.stream) {
+    if (stream) {
       return streamImageFlow(ctx, req, reply, model, "edit", editReq, fileBaseUrlFor(ctx, req));
     }
     try {
