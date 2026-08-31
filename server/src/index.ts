@@ -7,6 +7,7 @@ import { loadEnv } from "./env.js";
 import { sweepExpired } from "./media/b64cache.js";
 import { openDb } from "./store/db.js";
 import { Repo } from "./store/repo.js";
+import { pruneExpiredGenerationHistory } from "./store/retention.js";
 import { seedIfEmpty, seedAdminIfEmpty } from "./store/seed.js";
 import { JobManager } from "./server/jobs.js";
 import path from "node:path";
@@ -43,10 +44,13 @@ const app = await buildApp({
   webDist: path.resolve(import.meta.dirname, "../../web/dist"),
 });
 
-// 每小时清理过期的生成图缓存（TTL 24h）
+// 每小时独立清理生成图（24h）和历史记录（7d）
 const sweep = (): void => {
-  const swept = sweepExpired(env.dataDir, 24 * 3600_000);
-  if (swept > 0) app.log.info(`swept ${swept} expired generated images`);
+  const sweptImages = sweepExpired(env.dataDir, 24 * 3600_000);
+  if (sweptImages > 0) app.log.info(`swept ${sweptImages} expired generated images`);
+
+  const sweptHistory = pruneExpiredGenerationHistory(repo);
+  if (sweptHistory > 0) app.log.info(`swept ${sweptHistory} expired generation records`);
 };
 sweep();
 setInterval(sweep, 3600_000).unref();
