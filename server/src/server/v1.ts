@@ -13,7 +13,12 @@ export function registerV1(ctx: AppContext): void {
       .filter((m) => (seen.has(m.publicName) ? false : (seen.add(m.publicName), true)));
     return {
       object: "list",
-      data: models.map((m) => ({ id: m.publicName, object: "model", owned_by: "tiny-images" })),
+      data: models.map((m) => ({
+        id: m.publicName,
+        object: "model",
+        owned_by: "tiny-images",
+        ...(m.supportsImageToImage ? { supportsImageToImage: true } : {}),
+      })),
     };
   });
   registerGenerations(ctx);

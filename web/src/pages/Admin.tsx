@@ -340,7 +340,7 @@ function ModelsTab() {
           {error}
         </div>
       )}
-      <button className="btn primary" onClick={() => setEditing({ enabled: true })} disabled={channels.length === 0}>
+      <button className="btn primary" onClick={() => setEditing({ enabled: true, supportsImageToImage: false })} disabled={channels.length === 0}>
         新建映射
       </button>
       {channels.length === 0 && <p className="muted">还没有渠道。请先在「渠道」页添加并启用一个渠道，再建立模型映射。</p>}
@@ -373,6 +373,14 @@ function ModelsTab() {
             onChange={(e) => setEditing({ ...editing, priority: Number(e.target.value) })}
           />
           <label className="check">
+            <input
+              type="checkbox"
+              checked={editing.supportsImageToImage ?? false}
+              onChange={(e) => setEditing({ ...editing, supportsImageToImage: e.target.checked })}
+            />{" "}
+            支持图生图
+          </label>
+          <label className="check">
             <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
           </label>
           <div className="row">
@@ -394,6 +402,7 @@ function ModelsTab() {
               <th>优先级</th>
               <th>渠道</th>
               <th>上游 model</th>
+              <th>图生图</th>
               <th>状态</th>
               <th />
             </tr>
@@ -405,6 +414,9 @@ function ModelsTab() {
                 <td>{m.priority}</td>
                 <td>{m.channelName ?? m.channelId}</td>
                 <td className="mono">{m.upstreamName}</td>
+                <td>
+                  <span className={`pill ${m.supportsImageToImage ? "" : "off"}`}>{m.supportsImageToImage ? "支持" : "不支持"}</span>
+                </td>
                 <td>
                   <span className={`pill ${m.enabled ? "" : "off"}`}>{m.enabled ? "启用" : "停用"}</span>
                 </td>

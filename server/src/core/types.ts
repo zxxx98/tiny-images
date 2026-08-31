@@ -18,6 +18,7 @@ export interface ModelMapping {
   channelId: number;
   upstreamName: string;
   enabled: boolean;
+  supportsImageToImage: boolean;
 }
 
 export interface AIHordeOptions {

@@ -474,6 +474,10 @@ textarea:disabled {
   box-shadow: var(--bevel-out-shadow);
 }
 
+.btn-tooltip {
+  display: inline-flex;
+}
+
 .menubar .btn.small {
   padding: 4px 12px;
   font-size: 13px;

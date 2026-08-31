@@ -9,13 +9,19 @@ import AnnouncementDialog, {
 import EditImageInput from "./EditImageInput";
 
 interface ModelsResponse {
-  data: { id: string }[];
+  data: { id: string; supportsImageToImage?: boolean }[];
+}
+
+interface PlaygroundModel {
+  id: string;
+  supportsImageToImage: boolean;
 }
 
 const SIZE_PRESETS = ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x1152", "1152x2048", "2048x2048", "1792x1024", "1024x1792", "512x512", "256x256"];
 
 const JOB_KEY = "tiny-running-job";
 const DRAFT_KEY = "tiny-playground-draft";
+const EDIT_NOT_SUPPORTED_MESSAGE = "当前模型不支持图生图";
 
 interface Draft {
   mode?: "generate" | "edit";
@@ -55,7 +61,7 @@ export async function fetchJobIfCurrent<T>(
 
 export default function Playground() {
   const [mode, setMode] = useState<"generate" | "edit">("generate");
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<PlaygroundModel[]>([]);
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
   const [n, setN] = useState(1);
@@ -77,11 +83,14 @@ export default function Playground() {
   const activityRef = useRef(0);
   const startedRef = useRef(0);
   const location = useLocation();
+  const selectedModel = models.find((item) => item.id === model);
+  const canEdit = selectedModel?.supportsImageToImage === true;
+  const editUnavailable = selectedModel !== undefined && !canEdit;
 
   useEffect(() => {
     api<ModelsResponse>("/v1/models")
       .then((r) => {
-        setModels(r.data.map((m) => m.id));
+        setModels(r.data.map((m) => ({ id: m.id, supportsImageToImage: m.supportsImageToImage === true })));
         if (r.data.length > 0) setModel((cur) => cur || r.data[0].id);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
@@ -138,8 +147,16 @@ export default function Playground() {
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [editFiles]);
 
+  useEffect(() => {
+    if (mode === "edit" && editUnavailable) setMode("generate");
+  }, [editUnavailable, mode]);
+
   // 把一张已生成的图（结果区或历史页）载入编辑模式：拉取为 File 后切到编辑
   const loadIntoEdit = async (src: string): Promise<void> => {
+    if (editUnavailable) {
+      setError(EDIT_NOT_SUPPORTED_MESSAGE);
+      return;
+    }
     try {
       const res = await fetch(src);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -224,6 +241,11 @@ export default function Playground() {
     startedRef.current = Date.now();
     const activityId = ++activityRef.current;
     if (mode === "edit") {
+      if (!canEdit) {
+        setError(EDIT_NOT_SUPPORTED_MESSAGE);
+        setMode("generate");
+        return;
+      }
       await runEdit(activityId);
       return;
     }
@@ -312,14 +334,17 @@ export default function Playground() {
           >
             文生图
           </button>
-          <button
-            type="button"
-            className={`btn ${mode === "edit" ? "primary" : "ghost"}`}
-            aria-pressed={mode === "edit"}
-            onClick={() => setMode("edit")}
-          >
-            图片编辑
-          </button>
+          <span className="btn-tooltip" title={editUnavailable ? EDIT_NOT_SUPPORTED_MESSAGE : undefined}>
+            <button
+              type="button"
+              className={`btn ${mode === "edit" ? "primary" : "ghost"}`}
+              aria-pressed={mode === "edit"}
+              disabled={running || !canEdit}
+              onClick={() => setMode("edit")}
+            >
+              图片编辑
+            </button>
+          </span>
         </div>
         <label htmlFor="pg-model">模型</label>
         {models.length === 0 ? (
@@ -329,8 +354,8 @@ export default function Playground() {
         ) : (
           <select id="pg-model" value={model} onChange={(e) => setModel(e.target.value)}>
             {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
+              <option key={m.id} value={m.id}>
+                {m.id}
               </option>
             ))}
           </select>
@@ -422,7 +447,11 @@ export default function Playground() {
           />
         </details>
         <div className="row">
-          <button className="btn primary" type="submit" disabled={running || !model || !prompt || (mode === "edit" && editFiles.length === 0)}>
+          <button
+            className="btn primary"
+            type="submit"
+            disabled={running || !model || !prompt || (mode === "edit" && (!canEdit || editFiles.length === 0))}
+          >
             {running ? "生成中…" : mode === "edit" ? "编辑" : "生成"}
           </button>
           {running && (
@@ -458,8 +487,8 @@ export default function Playground() {
               <img
                 src={src}
                 alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
-                title="点击进入图片编辑"
-                onClick={() => void loadIntoEdit(src)}
+                title={editUnavailable ? EDIT_NOT_SUPPORTED_MESSAGE : "点击进入图片编辑"}
+                onClick={editUnavailable ? undefined : () => void loadIntoEdit(src)}
               />
               <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
                 下载

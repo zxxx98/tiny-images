@@ -116,6 +116,9 @@ const MIGRATIONS: string[] = [
   `
   CREATE INDEX IF NOT EXISTS generations_created_at ON generations(created_at);
   `,
+  `
+  ALTER TABLE models ADD COLUMN supports_image_to_image INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

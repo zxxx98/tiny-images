@@ -198,8 +198,9 @@ export function registerAdmin(ctx: AppContext): void {
       if (typeof b.priority !== "number" || !Number.isInteger(b.priority)) throw httpError(400, "'priority' must be an integer");
       priority = b.priority;
     }
+    const supportsImageToImage = optionalBoolean(b, "supportsImageToImage");
     try {
-      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName, priority });
+      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName, priority, supportsImageToImage });
       return await reply.code(201).send(model);
     } catch (err) {
       if (err instanceof ConflictError) throw httpError(409, err.message);
@@ -210,7 +211,14 @@ export function registerAdmin(ctx: AppContext): void {
   ctx.app.patch("/admin/models/:id", { preHandler: ctx.requireAdmin }, async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const b = requireBody(req);
-    const patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean; priority?: number } = {};
+    const patch: {
+      publicName?: string;
+      channelId?: number;
+      upstreamName?: string;
+      enabled?: boolean;
+      priority?: number;
+      supportsImageToImage?: boolean;
+    } = {};
     if (b.publicName !== undefined) patch.publicName = requireStr(b, "publicName").trim();
     if (b.channelId !== undefined) {
       if (typeof b.channelId !== "number" || !Number.isInteger(b.channelId)) throw httpError(400, "'channelId' must be an integer");
@@ -224,6 +232,8 @@ export function registerAdmin(ctx: AppContext): void {
     }
     const enabled = optionalBoolean(b, "enabled");
     if (enabled !== undefined) patch.enabled = enabled;
+    const supportsImageToImage = optionalBoolean(b, "supportsImageToImage");
+    if (supportsImageToImage !== undefined) patch.supportsImageToImage = supportsImageToImage;
     try {
       const model = repo.updateModel(id, patch);
       if (!model) throw httpError(404, "model not found");

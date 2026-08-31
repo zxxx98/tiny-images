@@ -125,6 +125,7 @@ export interface ModelMapping {
   upstreamName: string;
   enabled: boolean;
   priority: number;
+  supportsImageToImage: boolean;
   createdAt: number;
   channelName?: string | null;
 }

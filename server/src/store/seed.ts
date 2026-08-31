@@ -7,7 +7,7 @@ import type { Repo } from "./repo.js";
 
 interface SeedConfig {
   channels?: { name: string; type?: ChannelType; baseUrl: string; keys?: string[]; timeoutMs?: number; editMode?: string; extraHeaders?: Record<string, string> }[];
-  models?: { name: string; channel: string; upstream?: string }[];
+  models?: { name: string; channel: string; upstream?: string; supportsImageToImage?: boolean }[];
 }
 
 export function seedIfEmpty(dataDir: string, repo: Repo): void {
@@ -36,7 +36,7 @@ export function seedIfEmpty(dataDir: string, repo: Repo): void {
   for (const m of cfg.models ?? []) {
     const channelId = channelIds.get(m.channel);
     if (!channelId) throw new Error(`config.yaml: model '${m.name}' references unknown channel '${m.channel}'`);
-    repo.createModel({ publicName: m.name, channelId, upstreamName: m.upstream });
+    repo.createModel({ publicName: m.name, channelId, upstreamName: m.upstream, supportsImageToImage: m.supportsImageToImage });
   }
 }
 

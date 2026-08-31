@@ -29,6 +29,7 @@ export interface ModelRow {
   upstreamName: string;
   enabled: boolean;
   priority: number;
+  supportsImageToImage: boolean;
   createdAt: number;
 }
 
@@ -314,11 +315,29 @@ export class Repo {
   // ---- models ----
 
   // 同一 publicName 允许多条启用映射（按 priority 升序做故障转移），不再有唯一性约束
-  createModel(input: { publicName: string; channelId: number; upstreamName?: string; enabled?: boolean; priority?: number }): ModelRow {
+  createModel(input: {
+    publicName: string;
+    channelId: number;
+    upstreamName?: string;
+    enabled?: boolean;
+    priority?: number;
+    supportsImageToImage?: boolean;
+  }): ModelRow {
     const enabled = input.enabled !== false;
+    const supportsImageToImage = input.supportsImageToImage === true;
     const res = this.db
-      .prepare("INSERT INTO models (public_name, channel_id, upstream_name, enabled, priority, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(input.publicName, input.channelId, input.upstreamName ?? input.publicName, enabled ? 1 : 0, input.priority ?? 0, Date.now());
+      .prepare(
+        "INSERT INTO models (public_name, channel_id, upstream_name, enabled, priority, supports_image_to_image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        input.publicName,
+        input.channelId,
+        input.upstreamName ?? input.publicName,
+        enabled ? 1 : 0,
+        input.priority ?? 0,
+        supportsImageToImage ? 1 : 0,
+        Date.now(),
+      );
     return this.getModel(Number(res.lastInsertRowid))!;
   }
 
@@ -350,13 +369,33 @@ export class Repo {
     return rows.map((r) => this.toModel(r));
   }
 
-  updateModel(id: number, patch: { publicName?: string; channelId?: number; upstreamName?: string; enabled?: boolean; priority?: number }): ModelRow | null {
+  updateModel(
+    id: number,
+    patch: {
+      publicName?: string;
+      channelId?: number;
+      upstreamName?: string;
+      enabled?: boolean;
+      priority?: number;
+      supportsImageToImage?: boolean;
+    },
+  ): ModelRow | null {
     const existing = this.getModel(id);
     if (!existing) return null;
     const merged = { ...existing, ...patch };
     this.db
-      .prepare("UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ?, priority = ? WHERE id = ?")
-      .run(merged.publicName, merged.channelId, merged.upstreamName, merged.enabled ? 1 : 0, merged.priority, id);
+      .prepare(
+        "UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ?, priority = ?, supports_image_to_image = ? WHERE id = ?",
+      )
+      .run(
+        merged.publicName,
+        merged.channelId,
+        merged.upstreamName,
+        merged.enabled ? 1 : 0,
+        merged.priority,
+        merged.supportsImageToImage ? 1 : 0,
+        id,
+      );
     return this.getModel(id);
   }
 
@@ -373,6 +412,7 @@ export class Repo {
       upstreamName: String(row.upstream_name),
       enabled: Number(row.enabled) === 1,
       priority: row.priority === undefined ? 0 : Number(row.priority),
+      supportsImageToImage: Number(row.supports_image_to_image) === 1,
       createdAt: Number(row.created_at),
     };
   }
