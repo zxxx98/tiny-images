@@ -113,6 +113,9 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  CREATE INDEX IF NOT EXISTS generations_created_at ON generations(created_at);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

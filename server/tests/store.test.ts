@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "../src/store/db.js";
 import { ConflictError, Repo } from "../src/store/repo.js";
@@ -128,6 +129,20 @@ describe("logs", () => {
 });
 
 describe("generations", () => {
+  const generationEntry = (createdAt: number, prompt: string) => ({
+    createdAt,
+    apiKeyId: null,
+    userId: null,
+    model: "m",
+    prompt,
+    params: "{}",
+    status: "ok" as const,
+    channelId: null,
+    latencyMs: 1,
+    errorMessage: null,
+    images: "[]",
+  });
+
   it("insert/complete/list cursor pagination, key-filtered, failPending", () => {
     const a = repo.createApiKey("k1");
     const id1 = repo.insertGeneration({ createdAt: 1, apiKeyId: a.id, userId: null, model: "m", prompt: "p1", params: "{}", status: "pending", channelId: null, latencyMs: null, errorMessage: null, images: "[]" });
@@ -145,5 +160,24 @@ describe("generations", () => {
     const id3 = repo.insertGeneration({ createdAt: 3, apiKeyId: a.id, userId: null, model: "m", prompt: "p3", params: "{}", status: "pending", channelId: null, latencyMs: null, errorMessage: null, images: "[]" });
     expect(repo.failPendingGenerations("server restarted")).toBe(1);
     expect(repo.listGenerations({ admin: false, userId: null, apiKeyId: a.id }, null, 10).find((r) => r.id === id3)?.errorMessage).toBe("server restarted");
+  });
+
+  it("prunes generations strictly older than the cutoff", () => {
+    repo.insertGeneration(generationEntry(99, "expired"));
+    repo.insertGeneration(generationEntry(100, "boundary"));
+    repo.insertGeneration(generationEntry(101, "fresh"));
+
+    expect(repo.pruneGenerations(100)).toBe(1);
+    expect(repo.listGenerations({ admin: true, userId: null, apiKeyId: null }, null, 10).map((row) => row.prompt)).toEqual([
+      "fresh",
+      "boundary",
+    ]);
+  });
+
+  it("indexes generation creation time for retention pruning", () => {
+    const db = new DatabaseSync(path.join(dir, "tiny-images.db"));
+    const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get("generations_created_at");
+    db.close();
+    expect(row).toBeDefined();
   });
 });

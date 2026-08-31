@@ -530,6 +530,11 @@ export class Repo {
     return Number(res.changes);
   }
 
+  pruneGenerations(createdBefore: number): number {
+    const result = this.db.prepare("DELETE FROM generations WHERE created_at < ?").run(createdBefore);
+    return Number(result.changes);
+  }
+
   private toGeneration(r: Record<string, unknown>): GenerationRow {
     return {
       id: Number(r.id),
