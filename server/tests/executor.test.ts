@@ -114,7 +114,11 @@ describe("Executor", () => {
         return {
           created: 1,
           images: [{ b64: "AA", revisedPrompt: req.prompt }],
-          raw: { prompt: req.prompt, data: [{ b64_json: "AA", revised_prompt: req.prompt }] },
+          raw: {
+            prompt: req.prompt,
+            data: [{ b64_json: "AA", revised_prompt: req.prompt }],
+            usage: { input_tokens: 12, details: { image_tokens: 4 }, unsafe_note: req.prompt },
+          },
         };
       },
       async edit() {
@@ -129,7 +133,11 @@ describe("Executor", () => {
 
     expect(upstreamPrompt).toBe("  shared style  \np");
     expect(request.prompt).toBe("p");
-    expect(response.result).toEqual({ created: 1, images: [{ b64: "AA" }] });
+    expect(response.result).toEqual({
+      created: 1,
+      images: [{ b64: "AA" }],
+      raw: { usage: { input_tokens: 12, details: { image_tokens: 4 } } },
+    });
   });
 
   it("prepends the global prompt to edits without copying or mutating images", async () => {
@@ -184,6 +192,28 @@ describe("Executor", () => {
     await build(provider).generate("img", gen(), { callerApiKeyId: null });
 
     expect(upstreamPrompt).toBe("p");
+  });
+
+  it("does not expose an upstream error that echoes the combined prompt", async () => {
+    repo.updateAppSettings({ globalPrompt: "secret policy", announcement: "" });
+    const provider: ImageProvider = {
+      kind: "fake",
+      async generate(req) {
+        throw new UpstreamError(400, "invalid_request_error", `invalid prompt: ${req.prompt}`, "bad_prompt");
+      },
+      async edit() {
+        return ok;
+      },
+      async test() {
+        return { ok: true, message: "" };
+      },
+    };
+
+    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((err: unknown) => err);
+
+    expect(error).toMatchObject({ httpStatus: 400, type: "invalid_request_error", code: "bad_prompt" });
+    expect((error as Error).message).not.toContain("secret policy");
+    expect((error as Error).message).not.toContain("invalid prompt");
   });
 
   it("throws ModelNotFoundError for unknown model", async () => {
