@@ -348,6 +348,11 @@ textarea {
   width: 100%;
 }
 
+textarea#pg-prompt,
+textarea[aria-label="高级参数 JSON"] {
+  resize: vertical;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--muted-ink);
