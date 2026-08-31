@@ -1,10 +1,11 @@
 # tiny-images
 
-生图 API 聚合网关：把多个上游生图渠道（OpenAI 官方、各类 OpenAI 兼容中转站）统一成 **ChatGPT/OpenAI images API 格式** 对外暴露，任何 OpenAI SDK 只需改 `baseURL` 即可使用。自带 Web Playground（调试出图）与管理后台（渠道 / key 池 / 模型映射 / 日志）。
+生图 API 聚合网关：把多个上游生图渠道（OpenAI 官方、各类 OpenAI 兼容中转站、AI Horde）统一成 **ChatGPT/OpenAI images API 格式** 对外暴露，任何 OpenAI SDK 只需改 `baseURL` 即可使用。自带 Web Playground（调试出图）与管理后台（渠道 / key 池 / 模型映射 / 日志）。
 
 ## 功能
 
 - **OpenAI images 兼容 API**：`POST /v1/images/generations`、`POST /v1/images/edits`（multipart，含 JSON 回退）、`GET /v1/models`
+- **原生 AI Horde**：支持异步生成轮询、img2img 和 inpainting，并可通过 `horde` 命名空间传递 Horde 专属参数
 - **流式生成**：请求体 `"stream": true` 走 SSE（自定义协议，见下文）
 - **渠道与 key 池**：每渠道多 apiKey 轮询；401/403/429 自动冷却换 key 重试
 - **模型映射**：对外 model 名 → （渠道，上游 model 名）；启用中的映射名唯一
@@ -61,10 +62,17 @@ channels:
     baseUrl: https://api.openai.com/v1
     keys: [sk-xxx]
     timeoutMs: 120000
+  - name: horde
+    type: ai-horde
+    baseUrl: https://aihorde.net/api/v2
+    keys: ["0000000000"] # 匿名 key；也可替换为注册账号的 key
 models:
   - name: gpt-image-1
     channel: openai
     upstream: gpt-image-1
+  - name: pony
+    channel: horde
+    upstream: Pony Diffusion
 ```
 
 ## API 用法
@@ -94,7 +102,31 @@ curl http://localhost:3000/v1/images/generations \
 ```
 
 - 未指定 `response_format` 时按上游原生格式返回；显式指定 `url` / `b64_json` 时网关自动转换。
-- `quality`、`style` 等其余参数原样透传上游（`response_format` 除外，转换由网关本地完成）。
+- OpenAI 兼容渠道会原样透传 `quality`、`style` 等其余参数（`response_format` 除外，转换由网关本地完成）。
+
+### AI Horde
+
+将对外模型映射到 `ai-horde` 渠道后，请求仍使用 OpenAI images 路径。Horde 专属选项放在顶层 `horde` 对象中，避免被发送到其他类型的上游：
+
+```bash
+curl http://localhost:3000/v1/images/generations \
+  -H "Authorization: Bearer sk-tiny-…" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "pony",
+    "prompt": "a white cat",
+    "n": 1,
+    "size": "1024x1024",
+    "horde": {
+      "nsfw": true,
+      "params": { "steps": 25, "sampler_name": "k_euler" }
+    }
+  }'
+```
+
+`model` 映射、`n` 和明确的 `size` 优先于 `horde.params` 中的同名设置；`quality` 对 AI Horde 不生效。AI Horde 是 worker 排队式服务，耗时和模型可用性取决于当前在线 worker。
+
+`POST /v1/images/edits` 在没有 `mask` 时使用 img2img，有 `mask` 时使用 inpainting。每次只接受一张源图，mask 尺寸必须与源图一致；网关使用 `sharp` 将 PNG、JPEG 或 WebP 源图和 mask 转为 AI Horde 所需的 Base64 WebP。实际编辑能力仍取决于所选模型和在线 worker。
 
 ### 流式（SSE）
 
@@ -116,7 +148,7 @@ data: [DONE]
 server/src
 ├─ server/     HTTP 层：/v1（generations/edits/models）、/admin、/files、SSE
 ├─ core/       executor 编排、model 路由、key 池、OpenAI 错误映射
-├─ providers/  OpenAICompatProvider（官方 + 中转站通用；新增协议在此扩展）
+├─ providers/  OpenAICompatProvider 与 AIHordeProvider（生成轮询、图片编辑转换）
 ├─ store/      SQLite 迁移、Repo、config.yaml 种子导入
 └─ media/      b64↔url 转换与生成图 TTL 缓存
 web/src        React：Login / Playground / Admin
@@ -124,8 +156,8 @@ web/src        React：Login / Playground / Admin
 
 数据流：`请求 → Bearer 鉴权 → 参数校验 → model 映射到渠道 → key 池取 key → 上游调用（401/403/429 换 key 重试）→ 格式转换 → 写日志 → 响应`。
 
-## 限制（第一版）
+## 限制
 
-- 仅支持 OpenAI 兼容协议上游；非兼容渠道需实现新的 Provider。
+- 内置支持 OpenAI 兼容上游和 AI Horde；其他非兼容协议仍需实现新的 Provider。
 - 启用中的对外 model 名全局唯一（不做同 model 多渠道切换）。
 - `request_logs` 仅保留最近 1000 条；生成图缓存 TTL 24 小时。
