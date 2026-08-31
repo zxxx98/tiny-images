@@ -119,14 +119,13 @@ async function runEditJob(
       allowedChannelIds: routeOpts.allowedChannelIds,
     });
     const images: { file: string; revisedPrompt?: string }[] = [];
+    if (r.result.images.length === 0) throw new Error("edit job returned no images to localize");
     for (const img of r.result.images) {
       const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
-      if (saved) {
-        const entry = { file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) };
-        images.push(entry);
-        ctx.deps.jobManager.addImage(jobId, entry);
-      }
+      if (!saved) throw new Error("failed to localize an edited image");
+      images.push({ file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) });
     }
+    for (const image of images) ctx.deps.jobManager.addImage(jobId, image);
     ctx.deps.jobManager.finish(jobId, {
       status: "ok",
       channelId: r.channel.id,
@@ -166,7 +165,7 @@ export function registerHistory(ctx: AppContext): void {
       errorMessage: null,
       images: "[]",
     });
-    const job = ctx.deps.jobManager.create({ apiKeyId, generationId, model, prompt: genReq.prompt });
+    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: genReq.prompt });
     void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId, {
       callerUserId: req.callerUserId ?? null,
       allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
@@ -191,7 +190,7 @@ export function registerHistory(ctx: AppContext): void {
       errorMessage: null,
       images: "[]",
     });
-    const job = ctx.deps.jobManager.create({ apiKeyId, generationId, model, prompt: editReq.prompt });
+    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: editReq.prompt });
     void runEditJob(ctx, job.id, model, editReq, apiKeyId, generationId, {
       callerUserId: userId,
       allowedChannelIds: ctx.deps.repo.allowedChannelIds(userId),
@@ -201,7 +200,11 @@ export function registerHistory(ctx: AppContext): void {
 
   ctx.app.get("/v1/images/jobs/:id", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const job = ctx.deps.jobManager.get(id, req.callerApiKeyId ?? null);
+    const job = ctx.deps.jobManager.get(id, {
+      apiKeyId: req.callerApiKeyId ?? null,
+      userId: req.callerUserId ?? null,
+      admin: req.callerRole === "admin",
+    });
     if (!job) {
       return reply.code(404).send({ error: { message: "job not found", type: "invalid_request_error", code: null } });
     }

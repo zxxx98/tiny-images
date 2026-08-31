@@ -28,9 +28,24 @@ export async function startEditJob(
   form: FormData,
   onStarted: (jobId: string) => void,
   create: EditJobCreator = createEditJob,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   const { jobId } = await create(form);
-  onStarted(jobId);
+  if (isCurrent()) onStarted(jobId);
+}
+
+export async function fetchJobIfCurrent<T>(
+  jobId: string,
+  isCurrent: () => boolean,
+  fetcher: (id: string) => Promise<T>,
+): Promise<T | null> {
+  try {
+    const job = await fetcher(jobId);
+    return isCurrent() ? job : null;
+  } catch (err) {
+    if (!isCurrent()) return null;
+    throw err;
+  }
 }
 
 export default function Playground() {
@@ -53,6 +68,7 @@ export default function Playground() {
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activityRef = useRef(0);
   const startedRef = useRef(0);
   const location = useLocation();
 
@@ -90,6 +106,7 @@ export default function Playground() {
       pollJob(jobId);
     }
     return () => {
+      activityRef.current += 1;
       if (timerRef.current) clearInterval(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,6 +156,7 @@ export default function Playground() {
   };
 
   const stopPolling = (): void => {
+    activityRef.current += 1;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -147,9 +165,12 @@ export default function Playground() {
 
   // 每 1s 轮询 job 状态；job 挂在服务端，切走页面再回来也能继续等
   const pollJob = (jobId: string): void => {
+    stopPolling();
+    const pollId = activityRef.current;
     const tick = async (): Promise<void> => {
       try {
-        const job = await fetchJob(jobId);
+        const job = await fetchJobIfCurrent(jobId, () => activityRef.current === pollId, fetchJob);
+        if (!job) return;
         setChannel(job.channel);
         setStatus(job.progress ?? (job.status === "running" ? "生成中…" : null));
         setImages(job.images.map((i) => i.url));
@@ -162,6 +183,7 @@ export default function Playground() {
         if (job.status === "error") setError(job.error ?? "生成失败");
         notifyQuotaChanged();
       } catch (err) {
+        if (activityRef.current !== pollId) return;
         stopPolling();
         localStorage.removeItem(JOB_KEY);
         setRunning(false);
@@ -172,9 +194,8 @@ export default function Playground() {
         }
       }
     };
-    void tick();
-    stopPolling();
     timerRef.current = setInterval(() => void tick(), 1000);
+    void tick();
   };
 
   const run = async (e: FormEvent) => {
@@ -187,8 +208,9 @@ export default function Playground() {
     setStatus(null);
     setElapsed(null);
     startedRef.current = Date.now();
+    const activityId = ++activityRef.current;
     if (mode === "edit") {
-      await runEdit();
+      await runEdit(activityId);
       return;
     }
     const payload = buildPayload();
@@ -196,16 +218,18 @@ export default function Playground() {
     setRunning(true);
     try {
       const { jobId } = await createJob(payload);
+      if (activityRef.current !== activityId) return;
       localStorage.setItem(JOB_KEY, jobId);
       pollJob(jobId);
     } catch (err) {
+      if (activityRef.current !== activityId) return;
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
     }
   };
 
   // 编辑模式：上传完成后创建后台 job，复用文生图轮询，避免长连接被代理中断
-  const runEdit = async (): Promise<void> => {
+  const runEdit = async (activityId: number): Promise<void> => {
     const extraObj: Record<string, unknown> = (() => {
       try {
         return JSON.parse(extra || "{}") as Record<string, unknown>;
@@ -230,8 +254,9 @@ export default function Playground() {
       await startEditJob(form, (jobId) => {
         localStorage.setItem(JOB_KEY, jobId);
         pollJob(jobId);
-      });
+      }, createEditJob, () => activityRef.current === activityId);
     } catch (err) {
+      if (activityRef.current !== activityId) return;
       setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
     }

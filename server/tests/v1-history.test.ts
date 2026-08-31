@@ -124,6 +124,40 @@ describe("POST /v1/images/jobs", () => {
     await waitJob(jobId);
   });
 
+  it("isolates user jobs across JWTs and API keys while allowing admins", async () => {
+    upstream.post("/v1/images/generations", async (_req, reply) => reply.send({ created: 1, data: [{ b64_json: PNG_B64 }] }));
+    const { hashPassword } = await import("../src/core/password.js");
+    repo.createUser({ email: "owner@x.com", passwordHash: hashPassword("pw-123456"), role: "user", quotaTotal: 100 });
+    repo.createUser({ email: "other@x.com", passwordHash: hashPassword("pw-123456"), role: "user", quotaTotal: 100 });
+    repo.createUser({ email: "admin@x.com", passwordHash: hashPassword("pw-123456"), role: "admin", quotaTotal: null });
+    await start();
+    const login = async (email: string) => {
+      const res = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email, password: "pw-123456" } });
+      return { authorization: `Bearer ${(res.json() as { token: string }).token}` };
+    };
+    const ownerAuth = await login("owner@x.com");
+    const otherAuth = await login("other@x.com");
+    const adminAuth = await login("admin@x.com");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/images/jobs",
+      headers: ownerAuth,
+      payload: { model: "img-1", prompt: "cat" },
+    });
+    const { jobId } = created.json();
+
+    expect((await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: ownerAuth })).statusCode).toBe(200);
+    expect((await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: otherAuth })).statusCode).toBe(404);
+    expect((await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: auth() })).statusCode).toBe(404);
+    expect((await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: adminAuth })).statusCode).toBe(200);
+    let ownerPoll = await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: ownerAuth });
+    for (let i = 0; i < 100 && ownerPoll.json().status === "running"; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ownerPoll = await app.inject({ url: `/v1/images/jobs/${jobId}`, headers: ownerAuth });
+    }
+    expect(ownerPoll.json().status).toBe("ok");
+  });
+
   it("error job records error generation", async () => {
     upstream.post("/v1/images/generations", async (_req, reply) => reply.code(500).send({ error: { message: "boom" } }));
     await start();
@@ -185,6 +219,26 @@ describe("POST /v1/images/edit-jobs", () => {
     const row = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0];
     expect(row.status).toBe("error");
     expect(row.errorMessage).toContain("boom");
+  });
+
+  it("fails the job when an upstream edit image cannot be localized", async () => {
+    upstream.post("/v1/images/edits", async (req, reply) => {
+      for await (const _part of req.parts()) {
+        // consume the multipart upload
+      }
+      const port = (upstream.server.address() as { port: number }).port;
+      return reply.send({ created: 42, data: [{ url: `http://127.0.0.1:${port}/missing.png` }] });
+    });
+    await start();
+
+    const created = await injectEditForm(makeEditForm());
+    const body = await waitJob(created.json().jobId);
+
+    expect(body.status).toBe("error");
+    expect(body.error).toContain("localize");
+    expect(body.images).toEqual([]);
+    const row = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0];
+    expect(row.status).toBe("error");
   });
 });
 

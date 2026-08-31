@@ -8,6 +8,7 @@ export interface JobImage {
 export interface JobRecord {
   id: string;
   apiKeyId: number | null;
+  userId: number | null;
   generationId: number;
   model: string;
   prompt: string;
@@ -21,16 +22,23 @@ export interface JobRecord {
   errorMessage: string | null;
 }
 
+export interface JobViewer {
+  apiKeyId: number | null;
+  userId: number | null;
+  admin: boolean;
+}
+
 // 内存 job 注册表：进程内可轮询的生成任务；历史查证走 generations 表
 export class JobManager {
   private jobs = new Map<string, JobRecord>(); // Map 保插入序，便于按最老淘汰
 
   constructor(private readonly max = 200) {}
 
-  create(input: { apiKeyId: number | null; generationId: number; model: string; prompt: string }): JobRecord {
+  create(input: { apiKeyId: number | null; userId: number | null; generationId: number; model: string; prompt: string }): JobRecord {
     const job: JobRecord = {
       id: randomBytes(12).toString("hex"),
       apiKeyId: input.apiKeyId,
+      userId: input.userId,
       generationId: input.generationId,
       model: input.model,
       prompt: input.prompt,
@@ -48,12 +56,13 @@ export class JobManager {
     return job;
   }
 
-  get(id: string, apiKeyId: number | null): JobRecord | null {
+  get(id: string, viewer: JobViewer): JobRecord | null {
     const job = this.jobs.get(id);
     if (!job) return null;
-    // apiKeyId 为 null 的调用者（admin token）可见全部
-    if (job.apiKeyId !== null && apiKeyId !== null && job.apiKeyId !== apiKeyId) return null;
-    return job;
+    if (viewer.admin) return job;
+    if (job.userId !== null) return viewer.userId === job.userId ? job : null;
+    if (job.apiKeyId !== null) return viewer.apiKeyId === job.apiKeyId ? job : null;
+    return viewer.userId === null && viewer.apiKeyId === null ? job : null;
   }
 
   setProgress(id: string, message: string): void {
