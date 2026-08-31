@@ -107,6 +107,12 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE users ADD COLUMN quota_day TEXT;
   `,
+  `
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

@@ -102,6 +102,12 @@ export interface UserRow {
   groupIds: number[];
 }
 
+export interface AppSettings {
+  globalPrompt: string;
+  announcement: string;
+  announcementVersion: number;
+}
+
 export class ConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -141,6 +147,38 @@ export class Repo {
 
   close(): void {
     this.db.close();
+  }
+
+  // ---- application settings ----
+
+  getAppSettings(): AppSettings {
+    const rows = this.db.prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[];
+    const values = new Map(rows.map((row) => [row.key, row.value]));
+    return {
+      globalPrompt: values.get("global_prompt") ?? "",
+      announcement: values.get("announcement") ?? "",
+      announcementVersion: Number(values.get("announcement_version") ?? "0"),
+    };
+  }
+
+  updateAppSettings(input: { globalPrompt: string; announcement: string }): AppSettings {
+    const current = this.getAppSettings();
+    const announcementVersion =
+      current.announcement === input.announcement ? current.announcementVersion : current.announcementVersion + 1;
+    const put = this.db.prepare(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    );
+    this.db.exec("BEGIN IMMEDIATE;");
+    try {
+      put.run("global_prompt", input.globalPrompt);
+      put.run("announcement", input.announcement);
+      put.run("announcement_version", String(announcementVersion));
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+    return this.getAppSettings();
   }
 
   // ---- channels ----
