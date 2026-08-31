@@ -199,6 +199,10 @@ export async function createEditJob(form: FormData): Promise<{ jobId: string }> 
     body: form,
   });
   const parsed = (await res.json().catch(() => ({}))) as { jobId?: string; error?: { message?: string } };
+  if (res.status === 401 && window.location.pathname !== "/login") {
+    clearToken();
+    window.location.assign("/login");
+  }
   if (!res.ok || !parsed.jobId) throw new ApiError(res.status, parsed);
   return { jobId: parsed.jobId };
 }

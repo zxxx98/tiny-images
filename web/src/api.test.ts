@@ -43,4 +43,24 @@ describe("createEditJob", () => {
 
     await expect(createEditJob(new FormData())).rejects.toThrow("'image' file is required");
   });
+
+  it("clears an expired token and redirects to login", async () => {
+    const removeItem = vi.fn();
+    const assign = vi.fn();
+    vi.stubGlobal("localStorage", { getItem: () => "expired-token", removeItem });
+    vi.stubGlobal("window", { location: { pathname: "/", assign } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "invalid token" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(createEditJob(new FormData())).rejects.toThrow("invalid token");
+    expect(removeItem).toHaveBeenCalledWith("tiny-admin-token");
+    expect(assign).toHaveBeenCalledWith("/login");
+  });
 });

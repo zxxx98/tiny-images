@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, clearToken, createJob, fetchJob, getToken, notifyQuotaChanged, ApiError } from "../api";
+import { api, createEditJob, createJob, fetchJob, notifyQuotaChanged, ApiError } from "../api";
 import EditImageInput from "./EditImageInput";
 
 interface ModelsResponse {
@@ -20,6 +20,17 @@ interface Draft {
   size?: string;
   responseFormat?: string;
   extra?: string;
+}
+
+type EditJobCreator = (form: FormData) => Promise<{ jobId: string }>;
+
+export async function startEditJob(
+  form: FormData,
+  onStarted: (jobId: string) => void,
+  create: EditJobCreator = createEditJob,
+): Promise<void> {
+  const { jobId } = await create(form);
+  onStarted(jobId);
 }
 
 export default function Playground() {
@@ -42,7 +53,6 @@ export default function Playground() {
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const startedRef = useRef(0);
   const location = useLocation();
 
@@ -194,7 +204,7 @@ export default function Playground() {
     }
   };
 
-  // 编辑模式：multipart 直连 /v1/images/edits（同步请求），完成后走历史页可查
+  // 编辑模式：上传完成后创建后台 job，复用文生图轮询，避免长连接被代理中断
   const runEdit = async (): Promise<void> => {
     const extraObj: Record<string, unknown> = (() => {
       try {
@@ -216,48 +226,18 @@ export default function Playground() {
     if (maskFile) form.append("mask", maskFile, maskFile.name);
 
     setRunning(true);
-    abortRef.current = new AbortController();
     try {
-      const res = await fetch("/v1/images/edits", {
-        method: "POST",
-        headers: { authorization: `Bearer ${getToken()}` },
-        body: form,
-        signal: abortRef.current.signal,
+      await startEditJob(form, (jobId) => {
+        localStorage.setItem(JOB_KEY, jobId);
+        pollJob(jobId);
       });
-      const parsed = (await res.json().catch(() => ({}))) as {
-        data?: { url?: string; b64_json?: string; revised_prompt?: string }[];
-        error?: { message?: string };
-      };
-      if (res.status === 401 && window.location.pathname !== "/login") {
-        clearToken();
-        window.location.assign("/login");
-        return;
-      }
-      if (!res.ok) throw new Error(parsed.error?.message ?? `HTTP ${res.status}`);
-      const items = parsed.data ?? [];
-      const urls = items.map((it) => it.url ?? (it.b64_json ? `data:image/png;base64,${it.b64_json}` : "")).filter(Boolean);
-      setImages(urls);
-      setRevisedPrompts(items.map((it) => it.revised_prompt).filter((v): v is string => !!v));
-      setElapsed(Date.now() - startedRef.current);
-      notifyQuotaChanged();
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setStatus("已取消");
-      } else {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    } finally {
-      abortRef.current = null;
+      setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
     }
   };
 
   const cancel = (): void => {
-    if (mode === "edit") {
-      // 同步请求直接中断
-      abortRef.current?.abort();
-      return;
-    }
     // 放弃轮询；服务端任务自然结束并写入历史
     stopPolling();
     localStorage.removeItem(JOB_KEY);
