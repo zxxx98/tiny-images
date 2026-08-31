@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob } from "./api";
+import { createEditJob, fetchSettings, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -62,5 +62,44 @@ describe("createEditJob", () => {
     await expect(createEditJob(new FormData())).rejects.toThrow("invalid token");
     expect(removeItem).toHaveBeenCalledWith("tiny-admin-token");
     expect(assign).toHaveBeenCalledWith("/login");
+  });
+});
+
+describe("application settings API", () => {
+  it("fetches and saves settings with authentication", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ globalPrompt: "", announcement: "", announcementVersion: 0 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ globalPrompt: "style", announcement: "hello", announcementVersion: 1 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSettings()).resolves.toMatchObject({ announcementVersion: 0 });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/admin/settings",
+      expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
+    );
+
+    await expect(saveSettings({ globalPrompt: "style", announcement: "hello" })).resolves.toMatchObject({ announcementVersion: 1 });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/admin/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ globalPrompt: "style", announcement: "hello" }),
+        headers: expect.objectContaining({ authorization: "Bearer web-token" }),
+      }),
+    );
   });
 });

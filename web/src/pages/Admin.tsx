@@ -3,8 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { api, type ApiKey, type Channel, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
 import GroupsTab from "./admin/GroupsTab";
 import UsersTab from "./admin/UsersTab";
+import SettingsTab from "./admin/SettingsTab";
 
-type Tab = "channels" | "models" | "keys" | "logs" | "groups" | "users";
+type Tab = "channels" | "models" | "keys" | "logs" | "groups" | "users" | "settings";
 
 const TABS: [Tab, string][] = [
   ["channels", "渠道"],
@@ -13,6 +14,7 @@ const TABS: [Tab, string][] = [
   ["keys", "API Keys"],
   ["users", "用户"],
   ["logs", "请求日志"],
+  ["settings", "设置"],
 ];
 
 const fmtTime = (ts: number): string => new Date(ts).toLocaleString();
@@ -41,6 +43,7 @@ export default function Admin() {
         {tab === "keys" && <ApiKeysTab />}
         {tab === "users" && <UsersTab />}
         {tab === "logs" && <LogsTab />}
+        {tab === "settings" && <SettingsTab />}
       </div>
     </div>
   );

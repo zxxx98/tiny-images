@@ -170,6 +170,17 @@ export interface LogRow {
   errorMessage: string | null;
 }
 
+export interface AppSettings {
+  globalPrompt: string;
+  announcement: string;
+  announcementVersion: number;
+}
+
+export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admin/settings");
+
+export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement">): Promise<AppSettings> =>
+  api<AppSettings>("/admin/settings", { method: "PUT", body: input });
+
 // ---- 生成 job ----
 
 export interface JobImage {
