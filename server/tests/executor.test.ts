@@ -39,9 +39,36 @@ beforeEach(() => {
   repo.createKey(channelId, "sk-2");
 });
 const build = (provider: ImageProvider) =>
-  new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), provider, repo });
+  new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers: new Map([["openai-compat", provider]]), repo });
 
 describe("Executor", () => {
+  it("selects the provider from channel.type", async () => {
+    repo.updateChannel(channelId, { type: "ai-horde" });
+    let openaiCalls = 0;
+    let hordeCalls = 0;
+    const openai = fakeProvider([async () => { openaiCalls++; return ok; }]);
+    const horde = { ...fakeProvider([async () => { hordeCalls++; return ok; }]), kind: "ai-horde" };
+    const providers = new Map<string, ImageProvider>([["openai-compat", openai], ["ai-horde", horde]]);
+    const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
+
+    await ex.generate("img", gen(), { callerApiKeyId: null });
+
+    expect(hordeCalls).toBe(1);
+    expect(openaiCalls).toBe(0);
+  });
+
+  it("rejects an unregistered channel type without fallback", async () => {
+    repo.updateChannel(channelId, { type: "ai-horde" });
+    const openai = { ...fakeProvider([async () => ok]), kind: "openai-compat" };
+    const providers = new Map<string, ImageProvider>([["openai-compat", openai]]);
+    const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
+
+    await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({
+      httpStatus: 500,
+      type: "configuration_error",
+    });
+  });
+
   it("succeeds on first key and logs ok", async () => {
     const ex = build(
       fakeProvider([

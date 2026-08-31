@@ -37,13 +37,14 @@ beforeEach(() => {
 async function app() {
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
+  const providers = new Map([["openai-compat", provider]]);
   return buildApp({
     env: { ...env },
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     logger: false,
     webDist: null,
   });

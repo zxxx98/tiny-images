@@ -48,13 +48,14 @@ async function start(): Promise<void> {
   const provider = new OpenAICompatProvider();
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
+  const providers = new Map([["openai-compat", provider]]);
   app = await buildApp({
     env: { port: 0, dataDir: dir, publicBaseUrl: null },
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     jobManager: new JobManager(),
     logger: false,
     webDist: null,

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { Executor } from "../src/core/executor.js";
 import { KeyPool } from "../src/core/keyPool.js";
@@ -11,12 +11,14 @@ import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
 import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
 import { hashPassword } from "../src/core/password.js";
+import type { ImageProvider } from "../src/core/types.js";
 
 let upstream: ReturnType<typeof Fastify>;
 let dir: string;
 let repo: Repo;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let H: { authorization: string };
+let hordeTest: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
   upstream = Fastify();
@@ -28,6 +30,14 @@ beforeEach(async () => {
   const upstreamUrl = `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`;
   void upstreamUrl;
   const provider = new OpenAICompatProvider();
+  hordeTest = vi.fn().mockResolvedValue({ ok: true, message: "horde ok" });
+  const horde: ImageProvider = {
+    kind: "ai-horde",
+    async generate() { throw new Error("not used"); },
+    async edit() { throw new Error("not used"); },
+    test: hordeTest,
+  };
+  const providers = new Map<string, ImageProvider>([["openai-compat", provider], ["ai-horde", horde]]);
   const router = new ModelRouter(repo);
   const keyPool = new KeyPool(repo);
   app = await buildApp({
@@ -35,8 +45,8 @@ beforeEach(async () => {
     repo,
     router,
     keyPool,
-    provider,
-    executor: new Executor({ router, keyPool, provider, repo }),
+    providers,
+    executor: new Executor({ router, keyPool, providers, repo }),
     logger: false,
     webDist: null,
   });
@@ -63,6 +73,16 @@ async function createChannel(name = "c1"): Promise<number> {
 }
 
 describe("/admin/channels", () => {
+  it("tests connectivity with the provider selected by channel type", async () => {
+    const channel = repo.createChannel({ name: "horde", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" });
+    repo.createKey(channel.id, "0000000000");
+
+    const result = await app.inject({ method: "POST", url: `/admin/channels/${channel.id}/test`, headers: H });
+
+    expect(result.json()).toMatchObject({ ok: true, message: "horde ok" });
+    expect(hordeTest).toHaveBeenCalledOnce();
+  });
+
   it("CRUD + conflict + test connectivity", async () => {
     const id = await createChannel();
     await app.inject({ method: "POST", url: `/admin/channels/${id}/keys`, headers: H, payload: { apiKey: "sk-up" } });

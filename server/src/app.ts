@@ -6,8 +6,8 @@ import path from "node:path";
 import type { Env } from "./env.js";
 import type { Executor } from "./core/executor.js";
 import type { KeyPool } from "./core/keyPool.js";
-import type { ImageProvider } from "./core/types.js";
 import type { ModelRouter } from "./core/router.js";
+import type { ProviderRegistry } from "./providers/registry.js";
 import { toOpenAIError } from "./core/errors.js";
 import type { Repo } from "./store/repo.js";
 import { makeRequireAdmin, makeRequireApiKey, makeRequireUser } from "./server/auth.js";
@@ -24,7 +24,7 @@ export interface AppDeps {
   repo: Repo;
   router: ModelRouter;
   keyPool: KeyPool;
-  provider: ImageProvider;
+  providers: ProviderRegistry;
   executor: Executor;
   jobManager: JobManager;
   logger?: boolean;

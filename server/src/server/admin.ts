@@ -4,6 +4,7 @@ import { hashPassword } from "../core/password.js";
 import type { EditMode } from "../core/types.js";
 import type { AppContext } from "../app.js";
 import type { UserRow } from "../store/repo.js";
+import { providerFor } from "../providers/registry.js";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
@@ -131,7 +132,7 @@ export function registerAdmin(ctx: AppContext): void {
     if (!channel) throw httpError(404, "channel not found");
     const key = repo.enabledKeys(id)[0];
     if (!key) return { ok: false, message: "no enabled api key", keyId: null };
-    const result = await ctx.deps.provider.test(channel, key.apiKey);
+    const result = await providerFor(ctx.deps.providers, channel.type).test(channel, key.apiKey);
     return { ...result, keyId: key.id };
   });
 
