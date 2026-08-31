@@ -17,6 +17,7 @@ import { registerV1 } from "./server/v1.js";
 import { registerAdmin } from "./server/admin.js";
 import { registerFiles } from "./server/files.js";
 import type { JobManager } from "./server/jobs.js";
+import { registerSettings } from "./server/settings.js";
 
 export interface AppDeps {
   env: Env;
@@ -78,6 +79,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerAuthRoutes(ctx, jwtSecret);
   registerV1(ctx);
   registerAdmin(ctx);
+  registerSettings(ctx);
   registerFiles(ctx);
 
   app.setErrorHandler((err, _req, reply) => {
