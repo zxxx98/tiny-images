@@ -1,9 +1,10 @@
 export type EditMode = "auto" | "multipart" | "json-base64";
+export type ChannelType = "openai-compat" | "ai-horde";
 
 export interface ChannelConfig {
   id: number;
   name: string;
-  type: string; // "openai-compat"
+  type: ChannelType;
   baseUrl: string;
   timeoutMs: number;
   editMode: EditMode;

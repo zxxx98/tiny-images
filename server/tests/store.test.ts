@@ -19,6 +19,7 @@ afterEach(() => {
 describe("channels", () => {
   it("creates and rejects duplicate name", () => {
     const c = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
+    expect(c.type).toBe("openai-compat");
     expect(c.enabled).toBe(true);
     expect(c.timeoutMs).toBe(120000);
     expect(() => repo.createChannel({ name: "a", baseUrl: "https://y/v1" })).toThrow(ConflictError);
@@ -30,6 +31,11 @@ describe("channels", () => {
     expect(u?.enabled).toBe(false);
     expect(repo.deleteChannel(c.id)).toBe(true);
     expect(repo.getChannel(c.id)).toBeNull();
+  });
+  it("persists channel type on create and update", () => {
+    const c = repo.createChannel({ name: "h", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" });
+    expect(c.type).toBe("ai-horde");
+    expect(repo.updateChannel(c.id, { type: "openai-compat" })?.type).toBe("openai-compat");
   });
 });
 
