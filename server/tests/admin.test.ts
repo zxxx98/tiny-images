@@ -73,6 +73,34 @@ async function createChannel(name = "c1"): Promise<number> {
 }
 
 describe("/admin/channels", () => {
+  it("creates, updates, and validates channel type", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/admin/channels",
+      headers: H,
+      payload: { name: "typed-horde", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().type).toBe("ai-horde");
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/admin/channels/${created.json().id}`,
+      headers: H,
+      payload: { type: "openai-compat" },
+    });
+    expect(patched.json().type).toBe("openai-compat");
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/admin/channels",
+      headers: H,
+      payload: { name: "bad-type", type: "unknown", baseUrl: "https://example.test" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.message).toContain("'type'");
+  });
+
   it("tests connectivity with the provider selected by channel type", async () => {
     const channel = repo.createChannel({ name: "horde", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" });
     repo.createKey(channel.id, "0000000000");

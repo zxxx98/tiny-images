@@ -1,7 +1,7 @@
 import { httpError } from "../core/errors.js";
 import { ConflictError } from "../store/repo.js";
 import { hashPassword } from "../core/password.js";
-import type { EditMode } from "../core/types.js";
+import type { ChannelType, EditMode } from "../core/types.js";
 import type { AppContext } from "../app.js";
 import type { UserRow } from "../store/repo.js";
 import { providerFor } from "../providers/registry.js";
@@ -51,11 +51,17 @@ function toUserView(u: UserRow) {
   };
 }
 
-function validateChannelInput(b: Record<string, unknown>): { name?: string; baseUrl?: string; timeoutMs?: number; editMode?: EditMode; extraHeaders?: Record<string, string>; enabled?: boolean } {
+function validateChannelInput(b: Record<string, unknown>): { name?: string; type?: ChannelType; baseUrl?: string; timeoutMs?: number; editMode?: EditMode; extraHeaders?: Record<string, string>; enabled?: boolean } {
   const out: Record<string, unknown> = {};
   if (b.name !== undefined) {
     if (typeof b.name !== "string" || !b.name.trim()) throw httpError(400, "'name' must be a non-empty string");
     out.name = b.name.trim();
+  }
+  if (b.type !== undefined) {
+    if (b.type !== "openai-compat" && b.type !== "ai-horde") {
+      throw httpError(400, "'type' must be 'openai-compat' or 'ai-horde'");
+    }
+    out.type = b.type;
   }
   if (b.baseUrl !== undefined) {
     if (typeof b.baseUrl !== "string" || !/^https?:\/\//.test(b.baseUrl)) throw httpError(400, "'baseUrl' must be an http(s) URL");

@@ -51,6 +51,15 @@ export default function Admin() {
 
 // ---- 渠道 ----
 
+export function newChannelDraft(): Partial<Channel> {
+  return { type: "openai-compat", editMode: "auto", timeoutMs: 120000, enabled: true };
+}
+
+export function changeChannelType(draft: Partial<Channel>, type: Channel["type"]): Partial<Channel> {
+  const addHordeDefault = type === "ai-horde" && draft.id === undefined && !draft.baseUrl;
+  return { ...draft, type, ...(addHordeDefault ? { baseUrl: "https://aihorde.net/api/v2" } : {}) };
+}
+
 function ChannelsTab() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [editing, setEditing] = useState<Partial<Channel> | null>(null);
@@ -67,7 +76,7 @@ function ChannelsTab() {
 
   // 编辑器里的 Headers 用独立草稿文本，失焦/保存时才解析，避免输入过程被重置
   const openEdit = (c: Partial<Channel> | null): void => {
-    const target = c ?? { editMode: "auto", timeoutMs: 120000, enabled: true };
+    const target = c ?? newChannelDraft();
     setEditing(target);
     setHeadersText(JSON.stringify(target.extraHeaders ?? {}));
   };
@@ -156,10 +165,19 @@ function ChannelsTab() {
           <h3>{editing.id ? "编辑渠道" : "新建渠道"}</h3>
           <label htmlFor="ch-name">名称</label>
           <input id="ch-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
+          <label htmlFor="ch-type">渠道类型</label>
+          <select
+            id="ch-type"
+            value={editing.type ?? "openai-compat"}
+            onChange={(e) => setEditing(changeChannelType(editing, e.target.value as Channel["type"]))}
+          >
+            <option value="openai-compat">OpenAI Compatible</option>
+            <option value="ai-horde">AI Horde</option>
+          </select>
           <label htmlFor="ch-base-url">Base URL</label>
           <input
             id="ch-base-url"
-            placeholder="https://api.openai.com/v1"
+            placeholder={editing.type === "ai-horde" ? "https://aihorde.net/api/v2" : "https://api.openai.com/v1"}
             value={editing.baseUrl ?? ""}
             onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
             required
@@ -173,12 +191,20 @@ function ChannelsTab() {
             value={editing.timeoutMs ?? 120000}
             onChange={(e) => setEditing({ ...editing, timeoutMs: Number(e.target.value) })}
           />
-          <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
-          <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
-            <option value="auto">auto（自动回退）</option>
-            <option value="multipart">multipart（标准表单上传）</option>
-            <option value="json-base64">json-base64（JSON + base64 图片）</option>
-          </select>
+          {editing.type === "ai-horde" ? (
+            <p className="muted">
+              AI Horde 是排队式异步服务，生成速度取决于在线 worker；图片编辑能力也取决于所选模型和 worker。可填写注册 key，匿名调用请使用 0000000000。
+            </p>
+          ) : (
+            <>
+              <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
+              <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
+                <option value="auto">auto（自动回退）</option>
+                <option value="multipart">multipart（标准表单上传）</option>
+                <option value="json-base64">json-base64（JSON + base64 图片）</option>
+              </select>
+            </>
+          )}
           <label htmlFor="ch-headers">额外 Headers（JSON，可选）</label>
           <textarea
             id="ch-headers"
@@ -207,6 +233,7 @@ function ChannelsTab() {
         <div key={c.id} className="entity">
           <div className="entity-head">
             <strong>{c.name}</strong>
+            <span className="pill">{c.type === "ai-horde" ? "AI Horde" : "OpenAI Compatible"}</span>
             <span className={`pill ${c.enabled ? "" : "off"}`}>{c.enabled ? "启用" : "停用"}</span>
             <span className="muted mono">{c.baseUrl}</span>
             <span className="spacer" />

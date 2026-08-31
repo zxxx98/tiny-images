@@ -100,7 +100,7 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
 export interface Channel {
   id: number;
   name: string;
-  type: string;
+  type: "openai-compat" | "ai-horde";
   baseUrl: string;
   timeoutMs: number;
   editMode: "auto" | "multipart" | "json-base64";
