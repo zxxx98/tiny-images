@@ -3,7 +3,14 @@ import type { Announcement } from "../api";
 export const ANNOUNCEMENT_ACK_KEY = "tiny-announcement-version";
 
 export const shouldShowAnnouncement = (value: Announcement, acknowledged: string | null): boolean =>
-  value.announcement.trim().length > 0 && acknowledged !== String(value.version);
+  value.announcement.length > 0 && acknowledged !== String(value.version);
+
+export function persistAnnouncementAcknowledgement(
+  value: Announcement,
+  storage: Pick<Storage, "setItem"> = localStorage,
+): void {
+  storage.setItem(ANNOUNCEMENT_ACK_KEY, String(value.version));
+}
 
 export default function AnnouncementDialog({ value, onAcknowledge }: { value: Announcement; onAcknowledge: () => void }) {
   return (

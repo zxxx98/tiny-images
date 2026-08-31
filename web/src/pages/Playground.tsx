@@ -1,7 +1,11 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, createEditJob, createJob, fetchAnnouncement, fetchJob, notifyQuotaChanged, ApiError, type Announcement } from "../api";
-import AnnouncementDialog, { ANNOUNCEMENT_ACK_KEY, shouldShowAnnouncement } from "./AnnouncementDialog";
+import AnnouncementDialog, {
+  ANNOUNCEMENT_ACK_KEY,
+  persistAnnouncementAcknowledgement,
+  shouldShowAnnouncement,
+} from "./AnnouncementDialog";
 import EditImageInput from "./EditImageInput";
 
 interface ModelsResponse {
@@ -289,7 +293,7 @@ export default function Playground() {
 
   const acknowledgeAnnouncement = (): void => {
     if (!announcement) return;
-    localStorage.setItem(ANNOUNCEMENT_ACK_KEY, String(announcement.version));
+    persistAnnouncementAcknowledgement(announcement);
     setAnnouncement(null);
   };
 
