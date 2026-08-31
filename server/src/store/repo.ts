@@ -567,15 +567,21 @@ export class Repo {
 
   private refreshDailyQuota(userId: number): void {
     const day = this.currentQuotaDay();
+    const row = this.db.prepare("SELECT quota_day FROM users WHERE id = ?").get(userId) as { quota_day: string | null } | undefined;
+    if (!row || (row.quota_day !== null && row.quota_day >= day)) return;
     this.db
-      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE id = ? AND (quota_day IS NULL OR quota_day <> ?)")
+      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE id = ? AND (quota_day IS NULL OR quota_day < ?)")
       .run(day, userId, day);
   }
 
   private refreshAllDailyQuotas(): void {
     const day = this.currentQuotaDay();
+    const pending = this.db
+      .prepare("SELECT 1 FROM users WHERE quota_day IS NULL OR quota_day < ? LIMIT 1")
+      .get(day);
+    if (!pending) return;
     this.db
-      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE quota_day IS NULL OR quota_day <> ?")
+      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE quota_day IS NULL OR quota_day < ?")
       .run(day, day);
   }
 

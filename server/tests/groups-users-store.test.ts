@@ -121,4 +121,52 @@ describe("users", () => {
     expect(repo.listUsers()[0]).toMatchObject({ quotaUsed: 2, quotaDay: "2026-01-02" });
     expect(repo.getUser(u.id)?.quotaUsed).toBe(2);
   });
+
+  it("keeps current-day reads read-only while another connection is writing", () => {
+    const multiDir = path.join(dir, "current-day-read");
+    const db1 = openDb(multiDir);
+    const db2 = openDb(multiDir);
+    const repo1 = new Repo(db1, () => now);
+    const repo2 = new Repo(db2, () => now);
+    const u = repo1.createUser({ email: "reader@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
+    expect(repo1.chargeQuota(u.id, 1)).toBe(true);
+
+    db1.exec("BEGIN IMMEDIATE");
+    try {
+      expect(repo2.getUser(u.id)).toMatchObject({ quotaUsed: 1, quotaDay: "2026-01-01" });
+    } finally {
+      db1.exec("ROLLBACK");
+      repo1.close();
+      repo2.close();
+    }
+  });
+
+  it("never moves a quota day backward when Repo clocks disagree", () => {
+    const multiDir = path.join(dir, "clock-skew");
+    const oldRepo = new Repo(openDb(multiDir), () => Date.UTC(2026, 0, 1, 15, 59, 59));
+    const newRepo = new Repo(openDb(multiDir), () => Date.UTC(2026, 0, 1, 16, 0, 0));
+    try {
+      const u = oldRepo.createUser({ email: "skew@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
+      expect(oldRepo.chargeQuota(u.id, 3)).toBe(true);
+      expect(newRepo.getUser(u.id)).toMatchObject({ quotaUsed: 0, quotaDay: "2026-01-02" });
+      expect(newRepo.chargeQuota(u.id, 2)).toBe(true);
+
+      expect(oldRepo.getUser(u.id)).toMatchObject({ quotaUsed: 2, quotaDay: "2026-01-02" });
+      expect(oldRepo.chargeQuota(u.id, 1)).toBe(true);
+      expect(newRepo.getUser(u.id)).toMatchObject({ quotaUsed: 3, quotaDay: "2026-01-02" });
+    } finally {
+      oldRepo.close();
+      newRepo.close();
+    }
+  });
+
+  it("configures SQLite to wait briefly for concurrent writers", () => {
+    const db = openDb(path.join(dir, "busy-timeout"));
+    try {
+      const row = db.prepare("PRAGMA busy_timeout").get() as Record<string, unknown>;
+      expect(Number(Object.values(row)[0])).toBeGreaterThanOrEqual(5_000);
+    } finally {
+      db.close();
+    }
+  });
 });

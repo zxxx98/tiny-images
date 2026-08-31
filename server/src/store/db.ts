@@ -114,6 +114,7 @@ export function openDb(dataDir: string): DatabaseSync {
   const db = new DatabaseSync(path.join(dataDir, "tiny-images.db"));
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
+  db.exec("PRAGMA busy_timeout = 5000;");
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
   const current = row?.user_version ?? 0;
   for (let v = current; v < MIGRATIONS.length; v++) {
