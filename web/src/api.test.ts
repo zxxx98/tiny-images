@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, fetchSettings, saveSettings } from "./api";
+import { createEditJob, fetchAnnouncement, fetchSettings, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -100,6 +100,23 @@ describe("application settings API", () => {
         body: JSON.stringify({ globalPrompt: "style", announcement: "hello" }),
         headers: expect.objectContaining({ authorization: "Bearer web-token" }),
       }),
+    );
+  });
+
+  it("fetches the current announcement", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ announcement: "hello", version: 2 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchAnnouncement()).resolves.toEqual({ announcement: "hello", version: 2 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/announcement",
+      expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
     );
   });
 });

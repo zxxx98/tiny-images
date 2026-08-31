@@ -181,6 +181,13 @@ export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admi
 export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement">): Promise<AppSettings> =>
   api<AppSettings>("/admin/settings", { method: "PUT", body: input });
 
+export interface Announcement {
+  announcement: string;
+  version: number;
+}
+
+export const fetchAnnouncement = (): Promise<Announcement> => api<Announcement>("/v1/announcement");
+
 // ---- 生成 job ----
 
 export interface JobImage {

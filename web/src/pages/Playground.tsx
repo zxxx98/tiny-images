@@ -1,6 +1,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, createEditJob, createJob, fetchJob, notifyQuotaChanged, ApiError } from "../api";
+import { api, createEditJob, createJob, fetchAnnouncement, fetchJob, notifyQuotaChanged, ApiError, type Announcement } from "../api";
+import AnnouncementDialog, { ANNOUNCEMENT_ACK_KEY, shouldShowAnnouncement } from "./AnnouncementDialog";
 import EditImageInput from "./EditImageInput";
 
 interface ModelsResponse {
@@ -67,6 +68,7 @@ export default function Playground() {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activityRef = useRef(0);
   const startedRef = useRef(0);
@@ -79,6 +81,14 @@ export default function Playground() {
         if (r.data.length > 0) setModel((cur) => cur || r.data[0].id);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    fetchAnnouncement()
+      .then((value) => {
+        if (shouldShowAnnouncement(value, localStorage.getItem(ANNOUNCEMENT_ACK_KEY))) setAnnouncement(value);
+      })
+      .catch(() => undefined);
   }, []);
 
   // 恢复草稿、导航带入的参数（历史页「重新生成」），以及未完成的生成 job
@@ -277,8 +287,16 @@ export default function Playground() {
     }
   };
 
+  const acknowledgeAnnouncement = (): void => {
+    if (!announcement) return;
+    localStorage.setItem(ANNOUNCEMENT_ACK_KEY, String(announcement.version));
+    setAnnouncement(null);
+  };
+
   return (
-    <div className="two-col">
+    <>
+      {announcement && <AnnouncementDialog value={announcement} onAcknowledge={acknowledgeAnnouncement} />}
+      <div className="two-col">
       <form className="card" onSubmit={run}>
         <h2>Playground</h2>
         <div className="row" role="tablist" aria-label="生成模式">
@@ -469,6 +487,7 @@ export default function Playground() {
           </details>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
