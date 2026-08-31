@@ -1,6 +1,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, clearToken, createJob, fetchJob, getToken, notifyQuotaChanged, ApiError } from "../api";
+import EditImageInput from "./EditImageInput";
 
 interface ModelsResponse {
   data: { id: string }[];
@@ -319,25 +320,7 @@ export default function Playground() {
         />
         {mode === "edit" && (
           <>
-            <label htmlFor="pg-edit-image">原图（可多选，PNG/JPG/WebP）</label>
-            <input
-              id="pg-edit-image"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              onChange={(e) => setEditFiles(Array.from(e.target.files ?? []))}
-              required
-            />
-            {editPreviews.length > 0 && (
-              <div className="edit-previews">
-                {editFiles.map((f, i) => (
-                  <figure key={`${f.name}-${i}`} className="edit-preview" title={f.name}>
-                    <img src={editPreviews[i]} alt={`原图 ${i + 1}：${f.name}`} />
-                    <figcaption className="muted">{f.name}</figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
+            <EditImageInput files={editFiles} previews={editPreviews} onChange={setEditFiles} />
             <label htmlFor="pg-edit-mask">蒙版 mask（可选，透明区域将被重绘）</label>
             <input
               id="pg-edit-mask"
