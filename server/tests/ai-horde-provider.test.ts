@@ -160,6 +160,26 @@ describe("AIHordeProvider", () => {
     await expect(provider.generate(gen(), ctx())).rejects.toMatchObject({ httpStatus: 502, type: "upstream_error", keyRetrySafe: false });
   });
 
+  it("maps an expired accepted task to 502 without resubmission", async () => {
+    let submitCalls = 0;
+    upstream.post("/api/v2/generate/async", async () => {
+      submitCalls++;
+      return { id: "task-expired" };
+    });
+    upstream.get("/api/v2/generate/check/task-expired", async (_request, reply) => {
+      return reply.code(404).send({ message: "Request not found" });
+    });
+    await start();
+    const { AIHordeProvider } = await import("../src/providers/ai-horde.js");
+
+    await expect(new AIHordeProvider().generate(gen(), ctx())).rejects.toMatchObject({
+      httpStatus: 502,
+      type: "upstream_error",
+      keyRetrySafe: false,
+    });
+    expect(submitCalls).toBe(1);
+  });
+
   it("rejects malformed task and empty final results", async () => {
     upstream.post("/api/v2/generate/async", async (request) => request.headers["x-empty"] ? { id: "task-empty" } : { unexpected: true });
     upstream.get("/api/v2/generate/check/task-empty", async () => ({ done: true, is_possible: true }));

@@ -212,6 +212,9 @@ export class AIHordeProvider implements ImageProvider {
     }
     if (status === 429) return new UpstreamError(429, "rate_limit_error", `channel '${channelName}' rate limited${suffix}`, "rate_limit_exceeded", keyRetrySafe);
     if (status === 503) return new UpstreamError(503, "service_unavailable", `channel '${channelName}' has no available AI Horde service${suffix}`, null, keyRetrySafe);
+    if (status === 404 && !keyRetrySafe) {
+      return new UpstreamError(502, "upstream_error", `channel '${channelName}' AI Horde task expired or was not found${suffix}`, null, false);
+    }
     if (status >= 500) return new UpstreamError(502, "upstream_error", `channel '${channelName}' server error${suffix}`, null, keyRetrySafe);
     return new UpstreamError(status, "invalid_request_error", `channel '${channelName}' rejected request${suffix}`, null, keyRetrySafe);
   }
