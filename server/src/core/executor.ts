@@ -33,6 +33,12 @@ export interface ExecutorResult {
 
 const KEY_ROTATE_STATUSES = new Set([401, 403, 429]);
 
+export function withGlobalPrompt<T extends UnifiedGenRequest | UnifiedEditRequest>(request: T, globalPrompt: string): T {
+  const prefix = globalPrompt.trim();
+  if (!prefix) return request;
+  return { ...request, prompt: `${prefix}\n${request.prompt}` } as T;
+}
+
 export class Executor {
   constructor(private readonly deps: ExecutorDeps) {}
 
@@ -52,6 +58,7 @@ export class Executor {
     const route = this.deps.router.resolve(publicName, opts.allowedChannelIds ?? null);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
+    const upstreamRequest = withGlobalPrompt(payload.req, this.deps.repo.getAppSettings().globalPrompt);
 
     // 额度：仅普通用户且配置了 quota_total 时生效；按成功生成的图片张数扣减
     const user = opts.callerUserId ? this.deps.repo.getUser(opts.callerUserId) : null;
@@ -80,8 +87,8 @@ export class Executor {
       try {
         const result =
           payload.kind === "generate"
-            ? await this.deps.provider.generate(payload.req, ctx)
-            : await this.deps.provider.edit(payload.req, ctx);
+            ? await this.deps.provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
+            : await this.deps.provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
         this.deps.keyPool.markSuccess(key.keyId);
         this.deps.router.markSuccess(channel.id);
         if (quotaLimited) {
