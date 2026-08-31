@@ -18,6 +18,7 @@ let repo: Repo;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let H: { authorization: string };
 let upstreamUrl = "";
+let now: number;
 
 beforeEach(async () => {
   upstream = Fastify();
@@ -29,7 +30,8 @@ beforeEach(async () => {
     };
   });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "qg-"));
-  repo = new Repo(openDb(dir));
+  now = Date.UTC(2026, 0, 1, 15, 59, 59);
+  repo = new Repo(openDb(dir), () => now);
   repo.createUser({ email: "admin@local", passwordHash: hashPassword("admin-pass"), role: "admin", quotaTotal: null });
   await upstream.listen({ port: 0, host: "127.0.0.1" });
   upstreamUrl = `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`;
@@ -119,6 +121,36 @@ describe("quota", () => {
     expect(r.statusCode).toBe(200);
     const r2 = await app.inject({ method: "POST", url: "/v1/images/generations", headers: H, payload: { model: "mdl", prompt: "p" } });
     expect(r2.statusCode).toBe(200);
+  });
+
+  it("restores an exhausted quota after Beijing midnight", async () => {
+    const s = await setupUser({ quotaTotal: 2, groupName: null });
+    const auth = { authorization: `Bearer ${s.apiKey}` };
+
+    const exhausted = await app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: auth,
+      payload: { model: "mdl", prompt: "p", n: 2 },
+    });
+    expect(exhausted.statusCode).toBe(200);
+    expect(repo.getUser(s.userId)?.quotaUsed).toBe(2);
+    expect((await app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: auth,
+      payload: { model: "mdl", prompt: "p" },
+    })).statusCode).toBe(402);
+
+    now = Date.UTC(2026, 0, 1, 16, 0, 0);
+    const restored = await app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: auth,
+      payload: { model: "mdl", prompt: "p" },
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(repo.getUser(s.userId)).toMatchObject({ quotaUsed: 1, quotaDay: "2026-01-02" });
   });
 });
 

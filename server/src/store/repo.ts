@@ -98,6 +98,7 @@ export interface UserRow {
   createdAt: number;
   quotaTotal: number | null;
   quotaUsed: number;
+  quotaDay: string | null;
   groupIds: number[];
 }
 
@@ -118,6 +119,11 @@ export interface ChannelInput {
 }
 
 const LOG_KEEP = 1000;
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+export function quotaDayAt(timestamp: number): string {
+  return new Date(timestamp + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
+}
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
@@ -126,7 +132,10 @@ function isUniqueViolation(err: unknown): boolean {
 export class Repo {
   private db: DatabaseSync;
 
-  constructor(db: DatabaseSync) {
+  constructor(
+    db: DatabaseSync,
+    private readonly now: () => number = Date.now,
+  ) {
     this.db = db;
   }
 
@@ -552,6 +561,24 @@ export class Repo {
 
   // ---- users ----
 
+  private currentQuotaDay(): string {
+    return quotaDayAt(this.now());
+  }
+
+  private refreshDailyQuota(userId: number): void {
+    const day = this.currentQuotaDay();
+    this.db
+      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE id = ? AND (quota_day IS NULL OR quota_day <> ?)")
+      .run(day, userId, day);
+  }
+
+  private refreshAllDailyQuotas(): void {
+    const day = this.currentQuotaDay();
+    this.db
+      .prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE quota_day IS NULL OR quota_day <> ?")
+      .run(day, day);
+  }
+
   private toUser(row: Record<string, unknown>): UserRow {
     const groupIds = this.db
       .prepare("SELECT group_id FROM user_group_members WHERE user_id = ? ORDER BY group_id")
@@ -565,6 +592,7 @@ export class Repo {
       createdAt: Number(row.created_at),
       quotaTotal: row.quota_total === null || row.quota_total === undefined ? null : Number(row.quota_total),
       quotaUsed: Number(row.quota_used),
+      quotaDay: row.quota_day === null || row.quota_day === undefined ? null : String(row.quota_day),
       groupIds: groupIds.map((g) => Number(g.group_id)),
     };
   }
@@ -573,8 +601,8 @@ export class Repo {
     const email = input.email.toLowerCase();
     try {
       const res = this.db
-        .prepare("INSERT INTO users (email, password_hash, role, enabled, quota_total, quota_used, created_at) VALUES (?, ?, ?, 1, ?, 0, ?)")
-        .run(email, input.passwordHash, input.role, input.quotaTotal, Date.now());
+        .prepare("INSERT INTO users (email, password_hash, role, enabled, quota_total, quota_used, quota_day, created_at) VALUES (?, ?, ?, 1, ?, 0, ?, ?)")
+        .run(email, input.passwordHash, input.role, input.quotaTotal, this.currentQuotaDay(), Date.now());
       return this.getUser(Number(res.lastInsertRowid))!;
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`user '${email}' already exists`);
@@ -583,16 +611,18 @@ export class Repo {
   }
 
   getUser(id: number): UserRow | null {
+    this.refreshDailyQuota(id);
     const row = this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? this.toUser(row) : null;
   }
 
   getUserByEmail(email: string): UserRow | null {
-    const row = this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()) as Record<string, unknown> | undefined;
-    return row ? this.toUser(row) : null;
+    const row = this.db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase()) as { id: number } | undefined;
+    return row ? this.getUser(Number(row.id)) : null;
   }
 
   listUsers(): UserRow[] {
+    this.refreshAllDailyQuotas();
     const rows = this.db.prepare("SELECT * FROM users ORDER BY id").all() as Record<string, unknown>[];
     return rows.map((r) => this.toUser(r));
   }
@@ -631,6 +661,7 @@ export class Repo {
   }
 
   chargeQuota(userId: number, n: number): boolean {
+    this.refreshDailyQuota(userId);
     const res = this.db
       .prepare("UPDATE users SET quota_used = quota_used + ? WHERE id = ? AND (quota_total IS NULL OR quota_used + ? <= quota_total)")
       .run(n, userId, n);

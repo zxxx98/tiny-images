@@ -4,13 +4,15 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "../src/core/password.js";
 import { openDb } from "../src/store/db.js";
-import { ConflictError, Repo } from "../src/store/repo.js";
+import { ConflictError, quotaDayAt, Repo } from "../src/store/repo.js";
 
 let dir: string;
 let repo: Repo;
+let now: number;
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "gu-"));
-  repo = new Repo(openDb(dir));
+  now = Date.UTC(2026, 0, 1, 15, 59, 59);
+  repo = new Repo(openDb(dir), () => now);
 });
 afterEach(() => {
   repo.close();
@@ -103,5 +105,20 @@ describe("users", () => {
 
     const free = repo.createUser({ email: "f@x.com", passwordHash: "a:b", role: "user", quotaTotal: null });
     expect(repo.chargeQuota(free.id, 9999)).toBe(true);
+  });
+
+  it("uses Beijing calendar days and resets quota once after midnight", () => {
+    expect(quotaDayAt(Date.UTC(2026, 0, 1, 15, 59, 59))).toBe("2026-01-01");
+    expect(quotaDayAt(Date.UTC(2026, 0, 1, 16, 0, 0))).toBe("2026-01-02");
+
+    const u = repo.createUser({ email: "daily@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
+    expect(repo.chargeQuota(u.id, 5)).toBe(true);
+    expect(repo.getUser(u.id)).toMatchObject({ quotaUsed: 5, quotaDay: "2026-01-01" });
+
+    now = Date.UTC(2026, 0, 1, 16, 0, 0);
+    expect(repo.getUserByEmail("daily@x.com")).toMatchObject({ quotaUsed: 0, quotaDay: "2026-01-02" });
+    expect(repo.chargeQuota(u.id, 2)).toBe(true);
+    expect(repo.listUsers()[0]).toMatchObject({ quotaUsed: 2, quotaDay: "2026-01-02" });
+    expect(repo.getUser(u.id)?.quotaUsed).toBe(2);
   });
 });

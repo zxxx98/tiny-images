@@ -104,6 +104,9 @@ const MIGRATIONS: string[] = [
   DROP INDEX IF EXISTS models_enabled_public_name;
   ALTER TABLE models ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  ALTER TABLE users ADD COLUMN quota_day TEXT;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {
