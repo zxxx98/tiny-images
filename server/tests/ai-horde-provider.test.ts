@@ -145,6 +145,21 @@ describe("AIHordeProvider", () => {
     expect((error as Error).message).toContain("safe upstream detail");
   });
 
+  it("redacts API keys and image-like Base64 from upstream error details", async () => {
+    const imageBase64 = "A".repeat(120);
+    upstream.post("/api/v2/generate/async", async (request, reply) => {
+      return reply.code(400).send({ message: `bad key ${request.headers.apikey}; source ${imageBase64}` });
+    });
+    await start();
+    const { AIHordeProvider } = await import("../src/providers/ai-horde.js");
+
+    const error = await new AIHordeProvider().generate(gen(), ctx()).catch((value: unknown) => value) as Error;
+
+    expect(error.message).not.toContain("horde-key");
+    expect(error.message).not.toContain(imageBase64);
+    expect(error.message).toContain("[redacted]");
+  });
+
   it("maps impossible and faulted checks without allowing resubmission", async () => {
     let mode: "impossible" | "faulted" = "impossible";
     upstream.post("/api/v2/generate/async", async () => ({ id: "task-error" }));

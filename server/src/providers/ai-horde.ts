@@ -198,13 +198,13 @@ export class AIHordeProvider implements ImageProvider {
       }
     }
     if (!response.ok) {
-      throw this.mapHttpError(response.status, json, ctx.channel.name, keyRetrySafe);
+      throw this.mapHttpError(response.status, json, ctx.channel.name, keyRetrySafe, apiKey);
     }
     return json;
   }
 
-  private mapHttpError(status: number, body: unknown, channelName: string, keyRetrySafe: boolean): UpstreamError {
-    const detail = this.safeErrorDetail(body);
+  private mapHttpError(status: number, body: unknown, channelName: string, keyRetrySafe: boolean, apiKey: string | null): UpstreamError {
+    const detail = this.safeErrorDetail(body, apiKey ? [apiKey] : []);
     const suffix = detail ? `: ${detail}` : "";
     if (status === 400) return new UpstreamError(400, "invalid_request_error", `channel '${channelName}' rejected request${suffix}`, null, keyRetrySafe);
     if (status === 401 || status === 403) {
@@ -219,19 +219,23 @@ export class AIHordeProvider implements ImageProvider {
     return new UpstreamError(status, "invalid_request_error", `channel '${channelName}' rejected request${suffix}`, null, keyRetrySafe);
   }
 
-  private safeErrorDetail(body: unknown): string | null {
+  private safeErrorDetail(body: unknown, secrets: readonly string[]): string | null {
     if (!body || typeof body !== "object" || Array.isArray(body)) return null;
     const value = body as Record<string, unknown>;
-    if (typeof value.message === "string") return value.message.slice(0, 500);
-    if (typeof value.error === "string") return value.error.slice(0, 500);
-    if (value.error && typeof value.error === "object" && typeof (value.error as { message?: unknown }).message === "string") {
-      return String((value.error as { message: string }).message).slice(0, 500);
+    let detail: string | null = null;
+    if (typeof value.message === "string") detail = value.message;
+    else if (typeof value.error === "string") detail = value.error;
+    else if (value.error && typeof value.error === "object" && typeof (value.error as { message?: unknown }).message === "string") {
+      detail = String((value.error as { message: string }).message);
     }
-    if (value.errors && typeof value.errors === "object") {
-      const detail = Object.values(value.errors as Record<string, unknown>).find((item) => typeof item === "string");
-      if (typeof detail === "string") return detail.slice(0, 500);
+    if (detail === null && value.errors && typeof value.errors === "object") {
+      const nested = Object.values(value.errors as Record<string, unknown>).find((item) => typeof item === "string");
+      if (typeof nested === "string") detail = nested;
     }
-    return null;
+    if (detail === null) return null;
+    let safe = detail.slice(0, 500);
+    for (const secret of secrets) safe = safe.split(secret).join("[redacted]");
+    return safe.replace(/[A-Za-z0-9+/]{80,}={0,2}/g, "[redacted]");
   }
 
   private markUnsafe(error: unknown, channelName: string): UpstreamError {
