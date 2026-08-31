@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import multipart from "@fastify/multipart";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,7 @@ import { Repo } from "../src/store/repo.js";
 import { JobManager } from "../src/server/jobs.js";
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const PNG_BUF = Buffer.from(PNG_B64, "base64");
 let upstream: ReturnType<typeof Fastify>;
 let dir: string;
 let repo: Repo;
@@ -22,6 +24,7 @@ let apiKey: string;
 
 beforeEach(async () => {
   upstream = Fastify();
+  await upstream.register(multipart);
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "vh-"));
   repo = new Repo(openDb(dir));
 });
@@ -69,6 +72,26 @@ async function waitJob(jobId: string): Promise<Record<string, unknown>> {
   return poll.json();
 }
 
+function makeEditForm(): FormData {
+  const form = new FormData();
+  form.append("model", "img-1");
+  form.append("prompt", "add an airship");
+  form.append("n", "1");
+  form.append("response_format", "url");
+  form.append("image", new Blob([PNG_BUF], { type: "image/png" }), "source.png");
+  return form;
+}
+
+async function injectEditForm(form: FormData) {
+  const request = new Request("http://local/", { method: "POST", body: form });
+  return app.inject({
+    method: "POST",
+    url: "/v1/images/edit-jobs",
+    payload: Buffer.from(await request.arrayBuffer()),
+    headers: { ...auth(), "content-type": request.headers.get("content-type")! },
+  });
+}
+
 describe("POST /v1/images/jobs", () => {
   it("runs detached, records generation, poll returns ok with local file", async () => {
     upstream.post("/v1/images/generations", async (_req, reply) =>
@@ -109,6 +132,59 @@ describe("POST /v1/images/jobs", () => {
     expect(body.status).toBe("error");
     expect(body.error).toContain("boom");
     expect(repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0].status).toBe("error");
+  });
+});
+
+describe("POST /v1/images/edit-jobs", () => {
+  it("publishes a localized edit through job polling and history", async () => {
+    upstream.post("/v1/images/edits", async (req, reply) => {
+      for await (const _part of req.parts()) {
+        // consume the multipart upload
+      }
+      return reply.send({ created: 42, data: [{ b64_json: PNG_B64, revised_prompt: "airship added" }] });
+    });
+    await start();
+
+    const created = await injectEditForm(makeEditForm());
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json().jobId).toEqual(expect.any(String));
+    const body = await waitJob(created.json().jobId);
+    expect(body.status).toBe("ok");
+    expect(body.channel).toBe("mock");
+    const images = body.images as { file: string; url: string; revisedPrompt?: string }[];
+    expect(images[0].url).toMatch(/\/files\/[0-9a-f]{32}\.png$/);
+    expect(images[0].revisedPrompt).toBe("airship added");
+    const row = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0];
+    expect(row.status).toBe("ok");
+    expect(row.prompt).toBe("add an airship");
+    expect(JSON.parse(row.images)[0].file).toBe(images[0].file);
+  });
+
+  it("rejects a missing image before creating history or a job", async () => {
+    await start();
+    const form = new FormData();
+    form.append("model", "img-1");
+    form.append("prompt", "add an airship");
+
+    const res = await injectEditForm(form);
+
+    expect(res.statusCode).toBe(400);
+    expect(repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)).toHaveLength(0);
+  });
+
+  it("records background edit failures in both the job and history", async () => {
+    upstream.post("/v1/images/edits", async (_req, reply) => reply.code(500).send({ error: { message: "boom" } }));
+    await start();
+
+    const created = await injectEditForm(makeEditForm());
+    const body = await waitJob(created.json().jobId);
+
+    expect(body.status).toBe("error");
+    expect(body.error).toContain("boom");
+    const row = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)[0];
+    expect(row.status).toBe("error");
+    expect(row.errorMessage).toContain("boom");
   });
 });
 

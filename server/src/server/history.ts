@@ -1,9 +1,10 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AppContext } from "../app.js";
 import { ValidationError } from "../core/errors.js";
-import type { UnifiedGenRequest } from "../core/types.js";
+import type { UnifiedEditRequest, UnifiedGenRequest } from "../core/types.js";
 import { localizeImage } from "../media/b64cache.js";
 import type { GenerationRow } from "../store/repo.js";
+import { parseEditMultipart } from "./edits.js";
 import { fileBaseUrlFor, validateGenBody } from "./generations.js";
 import type { JobManager, JobRecord } from "./jobs.js";
 
@@ -50,6 +51,15 @@ function genParams(genReq: UnifiedGenRequest): string {
   });
 }
 
+function editParams(editReq: UnifiedEditRequest): string {
+  return JSON.stringify({
+    n: editReq.n,
+    size: editReq.size,
+    responseFormat: editReq.responseFormat,
+    passthrough: editReq.passthrough,
+  });
+}
+
 // 后台执行生成：与客户端连接解耦，切走页面不影响；完成后写内存 job 与历史记录
 async function runJob(
   ctx: AppContext,
@@ -92,6 +102,52 @@ async function runJob(
   }
 }
 
+async function runEditJob(
+  ctx: AppContext,
+  jobId: string,
+  model: string,
+  editReq: UnifiedEditRequest,
+  apiKeyId: number | null,
+  generationId: number,
+  routeOpts: { callerUserId: number | null; allowedChannelIds: number[] | null },
+): Promise<void> {
+  const started = Date.now();
+  try {
+    const r = await ctx.deps.executor.edit(model, editReq, {
+      callerApiKeyId: apiKeyId,
+      callerUserId: routeOpts.callerUserId,
+      allowedChannelIds: routeOpts.allowedChannelIds,
+    });
+    const images: { file: string; revisedPrompt?: string }[] = [];
+    for (const img of r.result.images) {
+      const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
+      if (saved) {
+        const entry = { file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) };
+        images.push(entry);
+        ctx.deps.jobManager.addImage(jobId, entry);
+      }
+    }
+    ctx.deps.jobManager.finish(jobId, {
+      status: "ok",
+      channelId: r.channel.id,
+      channelName: r.channel.name,
+      latencyMs: r.latencyMs,
+      errorMessage: null,
+    });
+    ctx.deps.repo.completeGeneration(generationId, {
+      status: "ok",
+      channelId: r.channel.id,
+      latencyMs: r.latencyMs,
+      images: JSON.stringify(images),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const latencyMs = Date.now() - started;
+    ctx.deps.jobManager.finish(jobId, { status: "error", channelId: null, channelName: null, latencyMs, errorMessage: message });
+    ctx.deps.repo.completeGeneration(generationId, { status: "error", latencyMs, errorMessage: message });
+  }
+}
+
 export function registerHistory(ctx: AppContext): void {
   ctx.app.post("/v1/images/jobs", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { model, req: genReq } = validateGenBody(req.body);
@@ -114,6 +170,31 @@ export function registerHistory(ctx: AppContext): void {
     void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId, {
       callerUserId: req.callerUserId ?? null,
       allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
+    });
+    return (reply as FastifyReply).code(200).send({ jobId: job.id });
+  });
+
+  ctx.app.post("/v1/images/edit-jobs", { preHandler: ctx.requireApiKey }, async (req, reply) => {
+    const { model, editReq } = await parseEditMultipart(req);
+    const apiKeyId = req.callerApiKeyId ?? null;
+    const userId = req.callerUserId ?? null;
+    const generationId = ctx.deps.repo.insertGeneration({
+      createdAt: Date.now(),
+      apiKeyId,
+      userId,
+      model,
+      prompt: editReq.prompt,
+      params: editParams(editReq),
+      status: "pending",
+      channelId: null,
+      latencyMs: null,
+      errorMessage: null,
+      images: "[]",
+    });
+    const job = ctx.deps.jobManager.create({ apiKeyId, generationId, model, prompt: editReq.prompt });
+    void runEditJob(ctx, job.id, model, editReq, apiKeyId, generationId, {
+      callerUserId: userId,
+      allowedChannelIds: ctx.deps.repo.allowedChannelIds(userId),
     });
     return (reply as FastifyReply).code(200).send({ jobId: job.id });
   });
