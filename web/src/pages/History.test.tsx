@@ -21,11 +21,23 @@ const upscaleItem = {
   createdAt: 1,
   model: "cloudflare-images-upscale",
   prompt: "",
-  params: { operation: "upscale", scale: 4 },
+  params: { operation: "upscale", scale: 4, targetWidth: 2048, targetHeight: 1536 },
   status: "ok" as const,
   latencyMs: 100,
   errorMessage: null,
   images: [{ file: "upscaled.webp", url: "/files/upscaled.webp" }],
+};
+
+const regularItem = {
+  id: 8,
+  createdAt: 2,
+  model: "img-1",
+  prompt: "a cat",
+  params: { size: "1024x1536" },
+  status: "ok" as const,
+  latencyMs: 120,
+  errorMessage: null,
+  images: [{ file: "cat.png", url: "/files/cat.png" }],
 };
 
 describe("history upscale rows", () => {
@@ -77,5 +89,74 @@ describe("history upscale rows", () => {
     });
 
     expect(container.querySelector('[data-testid="location-state"]')?.textContent).toBe('{"upscaleImageUrl":"/files/upscaled.webp"}');
+  });
+
+  it("keeps the detail open when clicking a history image", async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/history"]}>
+          <Routes>
+            <Route path="/history" element={<History />} />
+            <Route path="/" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await flush();
+    });
+
+    const tile = container.querySelector(".wall-tile") as HTMLButtonElement;
+    await act(async () => tile.click());
+    const image = container.querySelector(".detail-gallery img") as HTMLImageElement;
+    await act(async () => image.click());
+
+    expect(container.querySelector(".detail-overlay")).not.toBeNull();
+    expect(container.querySelector('[data-testid="location-state"]')).toBeNull();
+  });
+
+  it("navigates to edit mode only from the explicit edit action", async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/history"]}>
+          <Routes>
+            <Route path="/history" element={<History />} />
+            <Route path="/" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await flush();
+    });
+
+    const tile = container.querySelector(".wall-tile") as HTMLButtonElement;
+    await act(async () => tile.click());
+    const edit = Array.from(container.querySelectorAll(".shot-actions button")).find((item) => item.textContent?.trim() === "编辑此图") as HTMLButtonElement;
+    await act(async () => {
+      edit.click();
+      await flush();
+    });
+
+    expect(container.querySelector('[data-testid="location-state"]')?.textContent).toBe('{"editImageUrl":"/files/upscaled.webp"}');
+  });
+
+  it("shows normal, fallback, and upscale output sizes in history", async () => {
+    vi.mocked(apiModule.api).mockResolvedValue({
+      items: [
+        regularItem,
+        { ...upscaleItem, id: 9, params: { operation: "upscale", scale: 2, targetWidth: 2048, targetHeight: 1536 } },
+        { ...regularItem, id: 10, params: {} },
+      ],
+    } as never);
+
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={["/history"]}><History /></MemoryRouter>);
+      await flush();
+    });
+
+    expect(container.textContent).toContain("尺寸: 1024x1536");
+    expect(container.textContent).toContain("尺寸: 2048x1536");
+    expect(container.textContent).toContain("尺寸: auto");
+
+    const tile = container.querySelector('.wall-tile[title="a cat"]') as HTMLButtonElement;
+    await act(async () => tile.click());
+    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 1024x1536");
   });
 });
