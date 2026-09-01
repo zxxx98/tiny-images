@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { ChannelType, EditMode } from "../core/types.js";
+import type { ChannelType, EditMode, ModelAccessPolicy } from "../core/types.js";
 
 export interface ChannelRow {
   id: number;
@@ -763,6 +763,13 @@ export class Repo {
       .all(userId) as Record<string, unknown>[];
     if (rows.length === 0) return null; // 未配置分组 = 不限
     return rows.map((r) => Number(r.channel_id));
+  }
+
+  modelAccessPolicy(userId: number | null): ModelAccessPolicy {
+    return {
+      allowedChannelIds: this.allowedChannelIds(userId),
+      allowNsfw: userId === null ? false : this.getUser(userId)?.allowNsfw === true,
+    };
   }
 
   chargeQuota(userId: number, n: number): boolean {

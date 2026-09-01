@@ -96,6 +96,14 @@ describe("users", () => {
     expect(repo.allowedChannelIds(u.id)).toEqual([c1.id]);
   });
 
+  it("builds a default-deny NSFW model access policy", () => {
+    const denied = repo.createUser({ email: "denied@x.com", passwordHash: "a:b", role: "user", quotaTotal: 10 });
+    const allowed = repo.createUser({ email: "allowed@x.com", passwordHash: "a:b", role: "user", quotaTotal: 10, allowNsfw: true });
+    expect(repo.modelAccessPolicy(null)).toEqual({ allowedChannelIds: null, allowNsfw: false });
+    expect(repo.modelAccessPolicy(denied.id)).toEqual({ allowedChannelIds: null, allowNsfw: false });
+    expect(repo.modelAccessPolicy(allowed.id)).toEqual({ allowedChannelIds: null, allowNsfw: true });
+  });
+
   it("chargeQuota conditional + null quota unlimited", () => {
     const u = repo.createUser({ email: "u@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
     expect(repo.chargeQuota(u.id, 3)).toBe(true);
