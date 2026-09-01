@@ -11,6 +11,11 @@ interface HistoryImage {
 interface HistoryParams {
   operation?: "upscale" | string;
   scale?: number;
+  size?: string;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  targetWidth?: number;
+  targetHeight?: number;
   [key: string]: unknown;
 }
 
@@ -43,6 +48,20 @@ export function isUpscaleHistoryItem(item: Pick<HistoryItem, "params">): boolean
 export function historyItemLabel(item: Pick<HistoryItem, "prompt" | "params">): string {
   if (!isUpscaleHistoryItem(item)) return item.prompt;
   return `图片超分 · ${item.params?.scale === 4 ? "4×" : "2×"}`;
+}
+
+export function historyItemSize(item: Pick<HistoryItem, "params">): string {
+  const params = item.params;
+  if (
+    params?.operation === "upscale" &&
+    Number.isInteger(params.targetWidth) &&
+    params.targetWidth > 0 &&
+    Number.isInteger(params.targetHeight) &&
+    params.targetHeight > 0
+  ) {
+    return `${params.targetWidth}x${params.targetHeight}`;
+  }
+  return typeof params?.size === "string" && params.size.length > 0 ? params.size : "auto";
 }
 
 export default function History() {
@@ -126,6 +145,7 @@ export default function History() {
         {items.map((item) => {
           const cover = item.images[0];
           const label = historyItemLabel(item);
+          const size = historyItemSize(item);
           return (
             <button
               key={item.id}
@@ -149,6 +169,7 @@ export default function History() {
                 {item.status === "error" && <span className="wall-flag">失败</span>}
               </span>
               <span className="wall-caption">{label}</span>
+              <span className="wall-size muted">尺寸: {size}</span>
             </button>
           );
         })}
@@ -171,7 +192,7 @@ export default function History() {
               <div className="detail-gallery">
                 {detail.images.map((img, i) => (
                   <figure key={i} className="shot">
-                    <img src={img.url} alt={`历史图片 ${i + 1}`} loading="lazy" title="点击进入图片编辑" onClick={() => editImage(img.url)} onError={markExpired} />
+                    <img src={img.url} alt={`历史图片 ${i + 1}`} loading="lazy" onError={markExpired} />
                     <div className="shot-actions">
                       <button className="btn small" onClick={() => editImage(img.url)}>
                         编辑此图
@@ -192,6 +213,7 @@ export default function History() {
                 <div className="history-meta">
                   <span className="pill">{fmtTime(detail.createdAt)}</span>
                   <span className="pill">{historyItemLabel(detail)}</span>
+                  <span className="pill">尺寸: {historyItemSize(detail)}</span>
                   {!isUpscaleHistoryItem(detail) && <span className="pill">{detail.model}</span>}
                   <span className={`pill ${detail.status === "ok" ? "" : detail.status === "error" ? "error" : "off"}`}>
                     {statusLabel(detail)}
