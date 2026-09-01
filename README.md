@@ -63,6 +63,8 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 
 管理员可在「管理后台 → 设置」编辑全局提示词和公告。全局提示词会在服务端前置到所有生成与图片编辑请求，但历史记录仍保留用户原始提示词。非空公告会在 Playground 自动弹出；用户点击“知道了”后当前浏览器不再显示该版本，管理员修改公告后会再次显示。
 
+管理员还可在「用户」中配置每个账号是否允许使用 NSFW 模型，并在「模型映射」中标记某条映射是否支持 NSFW。两个选项都默认关闭；只有明确开启权限的用户才能看到和调用 NSFW 映射。管理员账号也需显式开启，未绑定用户的 API Key 和开放模式始终不能访问 NSFW 映射。系统仅按管理员配置执行访问控制，不分析 prompt 或图片内容。
+
 首次启动若 `DATA_DIR/config.yaml` 存在且数据库为空，会导入种子数据：
 
 ```yaml
@@ -83,6 +85,7 @@ models:
   - name: pony
     channel: horde
     upstream: Pony Diffusion
+    supportsNsfw: true
 ```
 
 ## API 用法
