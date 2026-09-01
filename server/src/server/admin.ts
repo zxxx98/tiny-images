@@ -48,6 +48,7 @@ function toUserView(u: UserRow) {
     quotaUsed: u.quotaUsed,
     quotaRemaining: u.quotaTotal === null ? null : Math.max(0, u.quotaTotal - u.quotaUsed),
     groupIds: u.groupIds,
+    allowNsfw: u.allowNsfw,
   };
 }
 
@@ -250,8 +251,9 @@ export function registerAdmin(ctx: AppContext): void {
       priority = b.priority;
     }
     const supportsImageToImage = optionalBoolean(b, "supportsImageToImage");
+    const supportsNsfw = optionalBoolean(b, "supportsNsfw");
     try {
-      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName, priority, supportsImageToImage });
+      const model = repo.createModel({ publicName: publicName.trim(), channelId, upstreamName, priority, supportsImageToImage, supportsNsfw });
       return await reply.code(201).send(model);
     } catch (err) {
       if (err instanceof ConflictError) throw httpError(409, err.message);
@@ -269,6 +271,7 @@ export function registerAdmin(ctx: AppContext): void {
       enabled?: boolean;
       priority?: number;
       supportsImageToImage?: boolean;
+      supportsNsfw?: boolean;
     } = {};
     if (b.publicName !== undefined) patch.publicName = requireStr(b, "publicName").trim();
     if (b.channelId !== undefined) {
@@ -285,6 +288,8 @@ export function registerAdmin(ctx: AppContext): void {
     if (enabled !== undefined) patch.enabled = enabled;
     const supportsImageToImage = optionalBoolean(b, "supportsImageToImage");
     if (supportsImageToImage !== undefined) patch.supportsImageToImage = supportsImageToImage;
+    const supportsNsfw = optionalBoolean(b, "supportsNsfw");
+    if (supportsNsfw !== undefined) patch.supportsNsfw = supportsNsfw;
     try {
       const model = repo.updateModel(id, patch);
       if (!model) throw httpError(404, "model not found");
@@ -403,7 +408,7 @@ export function registerAdmin(ctx: AppContext): void {
     }
     let user;
     try {
-      user = repo.createUser({ email, passwordHash: hashPassword(password), role: "user", quotaTotal: b.quotaTotal });
+      user = repo.createUser({ email, passwordHash: hashPassword(password), role: "user", quotaTotal: b.quotaTotal, allowNsfw: optionalBoolean(b, "allowNsfw") });
     } catch (err) {
       if (err instanceof ConflictError) throw httpError(409, err.message);
       throw err;
@@ -418,7 +423,7 @@ export function registerAdmin(ctx: AppContext): void {
     const existing = repo.getUser(id);
     if (!existing) throw httpError(404, "user not found");
     if ("role" in b) throw httpError(400, "role cannot be changed");
-    const patch: { enabled?: boolean; quotaTotal?: number | null; passwordHash?: string } = {};
+    const patch: { enabled?: boolean; quotaTotal?: number | null; passwordHash?: string; allowNsfw?: boolean } = {};
     if (b.enabled !== undefined) {
       if (typeof b.enabled !== "boolean") throw httpError(400, "'enabled' must be a boolean");
       if (existing.role === "admin" && b.enabled === false) throw httpError(400, "cannot disable an admin");
@@ -438,6 +443,8 @@ export function registerAdmin(ctx: AppContext): void {
       if (typeof b.password !== "string" || b.password.length < 6) throw httpError(400, "'password' must be at least 6 characters");
       patch.passwordHash = hashPassword(b.password);
     }
+    const allowNsfw = optionalBoolean(b, "allowNsfw");
+    if (allowNsfw !== undefined) patch.allowNsfw = allowNsfw;
     const updated = repo.updateUser(id, patch);
     if (!updated) throw httpError(404, "user not found");
     if (b.groupIds !== undefined) {

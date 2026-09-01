@@ -122,6 +122,10 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE channels ADD COLUMN concurrency INTEGER NOT NULL DEFAULT 2;
   `,
+  `
+  ALTER TABLE users ADD COLUMN allow_nsfw INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE models ADD COLUMN supports_nsfw INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

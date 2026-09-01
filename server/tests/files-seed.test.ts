@@ -48,6 +48,7 @@ channels:
 models:
   - name: gpt-image-1
     channel: openai
+    supportsNsfw: true
 `,
     );
     seedIfEmpty(dir, repo);
@@ -59,6 +60,7 @@ models:
     expect(repo.listKeys(c.id)).toHaveLength(2);
     expect(repo.listModels()[0].publicName).toBe("gpt-image-1");
     expect(repo.listModels()[0].upstreamName).toBe("gpt-image-1");
+    expect(repo.listModels()[0].supportsNsfw).toBe(true);
   });
 
   it("skips when file missing or db not empty", () => {

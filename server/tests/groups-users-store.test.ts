@@ -60,12 +60,13 @@ describe("users", () => {
     const u = repo.createUser({ email: "A@x.com", passwordHash: "aa:bb", role: "user", quotaTotal: 100 });
     expect(u.email).toBe("a@x.com"); // 统一小写
     expect(u.quotaUsed).toBe(0);
+    expect(u.allowNsfw).toBe(false);
     expect(() => repo.createUser({ email: "a@x.com", passwordHash: "c", role: "user", quotaTotal: 1 })).toThrow(ConflictError);
     expect(repo.getUserByEmail("A@X.com")?.id).toBe(u.id);
     expect(repo.listUsers()).toHaveLength(1);
 
-    const patched = repo.updateUser(u.id, { quotaTotal: 50, enabled: false, passwordHash: "cc:dd" });
-    expect(patched).toMatchObject({ quotaTotal: 50, enabled: false, passwordHash: "cc:dd" });
+    const patched = repo.updateUser(u.id, { quotaTotal: 50, enabled: false, passwordHash: "cc:dd", allowNsfw: true });
+    expect(patched).toMatchObject({ quotaTotal: 50, enabled: false, passwordHash: "cc:dd", allowNsfw: true });
     expect(repo.updateUser(999, { enabled: true })).toBeNull();
 
     expect(repo.deleteUser(u.id)).toBe(true);

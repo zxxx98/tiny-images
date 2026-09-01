@@ -87,15 +87,17 @@ describe("/admin/groups", () => {
 describe("/admin/users", () => {
   it("create/list/patch/delete", async () => {
     const g = (await app.inject({ method: "POST", url: "/admin/groups", headers: H, payload: { name: "g" } })).json() as { id: number };
-    const uid = await makeUser({ groupIds: [g.id] });
+    const uid = await makeUser({ groupIds: [g.id], allowNsfw: true });
 
     const list = await app.inject({ url: "/admin/users", headers: H });
     const u = (list.json() as { id: number }[]).find((x) => x.id === uid)!;
-    expect(u).toMatchObject({ email: "u1@x.com", role: "user", enabled: true, quotaTotal: 100, quotaUsed: 0, quotaRemaining: 100, groupIds: [g.id] });
+    expect(u).toMatchObject({ email: "u1@x.com", role: "user", enabled: true, quotaTotal: 100, quotaUsed: 0, quotaRemaining: 100, groupIds: [g.id], allowNsfw: true });
     expect(u.passwordHash).toBeUndefined();
 
-    const patched = await app.inject({ method: "PATCH", url: `/admin/users/${uid}`, headers: H, payload: { quotaTotal: 5, groupIds: [], enabled: false, password: "newpass1" } });
-    expect(patched.json()).toMatchObject({ quotaTotal: 5, groupIds: [], enabled: false, quotaRemaining: 5 });
+    const patched = await app.inject({ method: "PATCH", url: `/admin/users/${uid}`, headers: H, payload: { quotaTotal: 5, groupIds: [], enabled: false, password: "newpass1", allowNsfw: false } });
+    expect(patched.json()).toMatchObject({ quotaTotal: 5, groupIds: [], enabled: false, quotaRemaining: 5, allowNsfw: false });
+
+    expect((await app.inject({ method: "PATCH", url: `/admin/users/${uid}`, headers: H, payload: { allowNsfw: "yes" } })).statusCode).toBe(400);
 
     expect((await app.inject({ method: "DELETE", url: `/admin/users/${uid}`, headers: H })).statusCode).toBe(204);
     expect((await app.inject({ method: "DELETE", url: `/admin/users/${uid}`, headers: H })).statusCode).toBe(404);
