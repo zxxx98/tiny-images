@@ -42,6 +42,11 @@ it("shows a default-off user NSFW permission and administrator toggle", async ()
     await Promise.resolve();
   });
   expect(apiMock).toHaveBeenCalledWith("/admin/users/1", { method: "PATCH", body: { allowNsfw: true } });
+  const adminRow = Array.from(container.querySelectorAll("tbody tr")).find((row) => row.textContent?.includes("admin@x.com"))!;
+  const cells = adminRow.querySelectorAll("td");
+  expect(cells[3].textContent).toBe("不限");
+  expect(cells[4].textContent).toBe("不限");
+  expect(cells[5].textContent).toContain("禁止");
   const newUser = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "新建用户")!;
   await act(async () => newUser.click());
 

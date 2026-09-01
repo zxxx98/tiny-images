@@ -161,7 +161,6 @@ export default function UsersTab() {
                 <td>
                   <span className={`pill ${u.enabled ? "" : "off"}`}>{u.enabled ? "启用" : "禁用"}</span>
                 </td>
-                <td><span className={`pill ${u.allowNsfw ? "" : "off"}`}>{u.allowNsfw ? "允许" : "禁止"}</span></td>
                 <td>{u.quotaRemaining === null ? "不限" : `${u.quotaRemaining}/${u.quotaTotal}（已用 ${u.quotaUsed}）`}</td>
                 <td>
                   {(u.groupIds ?? []).length === 0
@@ -170,6 +169,7 @@ export default function UsersTab() {
                         .map((gid) => groups.find((g) => g.id === gid)?.name ?? `#${gid}`)
                         .join("、")}
                 </td>
+                <td><span className={`pill ${u.allowNsfw ? "" : "off"}`}>{u.allowNsfw ? "允许" : "禁止"}</span></td>
                 <td className="muted">{fmtTime(u.createdAt)}</td>
                 <td>
                   <button className="btn small" onClick={() => toggleNsfw(u)}>{u.allowNsfw ? "禁止 NSFW" : "允许 NSFW"}</button>{" "}

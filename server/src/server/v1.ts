@@ -13,6 +13,7 @@ export function registerV1(ctx: AppContext): void {
     const models = ctx.deps.repo
       .listEnabledModels()
       .filter((m) => modelAllowedByPolicy(m, policy))
+      .filter((m) => ctx.deps.repo.getChannel(m.channelId)?.enabled === true)
       .filter((m) => (seen.has(m.publicName) ? false : (seen.add(m.publicName), true)));
     return {
       object: "list",

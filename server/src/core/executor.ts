@@ -23,8 +23,7 @@ export interface ExecutorDeps {
 export interface ExecutorOptions {
   callerApiKeyId: number | null;
   callerUserId?: number | null;
-  allowedChannelIds?: number[] | null;
-  modelAccess?: ModelAccessPolicy;
+  modelAccess: ModelAccessPolicy;
   signal?: AbortSignal;
 }
 
@@ -93,10 +92,7 @@ export class Executor {
     payload: { kind: "generate"; req: UnifiedGenRequest } | { kind: "edit"; req: UnifiedEditRequest },
     opts: ExecutorOptions,
   ): Promise<ExecutorResult> {
-    const route = this.deps.router.resolve(publicName, opts.modelAccess ?? {
-      allowedChannelIds: opts.allowedChannelIds ?? null,
-      allowNsfw: false,
-    });
+    const route = this.deps.router.resolve(publicName, opts.modelAccess);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
     const provider = providerFor(this.deps.providers, channel.type);

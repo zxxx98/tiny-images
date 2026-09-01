@@ -91,7 +91,30 @@ async function waitForJob(key: string, jobId: string): Promise<Record<string, un
   throw new Error("job did not finish");
 }
 
+async function injectEdit(url: string, key: string) {
+  const form = new FormData();
+  form.append("model", "adult");
+  form.append("prompt", "x");
+  form.append("image", new Blob([Buffer.from(PNG_B64, "base64")], { type: "image/png" }), "x.png");
+  const request = new Request("http://local/", { method: "POST", body: form });
+  return app.inject({
+    method: "POST",
+    url,
+    headers: { ...auth(key), "content-type": request.headers.get("content-type")! },
+    payload: Buffer.from(await request.arrayBuffer()),
+  });
+}
+
 describe("NSFW model access", () => {
+  it("does not expose a restricted name through a safe mapping on a disabled channel", async () => {
+    const disabled = repo.createChannel({ name: "disabled-safe", baseUrl: "https://disabled.test/v1", enabled: false });
+    repo.createModel({ publicName: "mixed", channelId: disabled.id });
+    const enabled = repo.listChannels().find((channel) => channel.name === "mock")!;
+    repo.createModel({ publicName: "mixed", channelId: enabled.id, supportsNsfw: true });
+
+    expect(await models(deniedKey)).not.toContain("mixed");
+    expect(await models(allowedKey)).toContain("mixed");
+  });
   it("hides and rejects restricted models unless the bound user is allowed", async () => {
     expect(await models(deniedKey)).toEqual(["safe"]);
     expect(await models(unboundKey)).toEqual(["safe"]);
@@ -134,18 +157,19 @@ describe("NSFW model access", () => {
     expect(stream.statusCode).toBe(404);
     expect(stream.headers["content-type"]).toContain("application/json");
 
-    const form = new FormData();
-    form.append("model", "adult");
-    form.append("prompt", "x");
-    form.append("image", new Blob([Buffer.from(PNG_B64, "base64")], { type: "image/png" }), "x.png");
-    const request = new Request("http://local/", { method: "POST", body: form });
-    const edit = await app.inject({
-      method: "POST", url: "/v1/images/edits",
-      headers: { ...auth(deniedKey), "content-type": request.headers.get("content-type")! },
-      payload: Buffer.from(await request.arrayBuffer()),
-    });
+    const edit = await injectEdit("/v1/images/edits", deniedKey);
     expect(edit.statusCode).toBe(404);
     expect(calls).toEqual({ generate: 0, edit: 0 });
+
+    const allowedStream = await app.inject({
+      method: "POST", url: "/v1/images/generations", headers: auth(allowedKey),
+      payload: { model: "adult", prompt: "x", stream: true },
+    });
+    expect(allowedStream.statusCode).toBe(200);
+    expect(allowedStream.headers["content-type"]).toContain("text/event-stream");
+    const allowedEdit = await injectEdit("/v1/images/edits", allowedKey);
+    expect(allowedEdit.statusCode).toBe(200);
+    expect(calls).toEqual({ generate: 1, edit: 1 });
   });
 
   it("applies policy to background generation jobs", async () => {
@@ -164,5 +188,19 @@ describe("NSFW model access", () => {
     const allowedJob = await waitForJob(allowedKey, allowed.json().jobId);
     expect(allowedJob.status).toBe("ok");
     expect(calls.generate).toBe(1);
+  });
+
+  it("applies policy to background edit jobs", async () => {
+    const denied = await injectEdit("/v1/images/edit-jobs", deniedKey);
+    expect(denied.statusCode).toBe(200);
+    const deniedJob = await waitForJob(deniedKey, denied.json().jobId);
+    expect(deniedJob.status).toBe("error");
+    expect(calls.edit).toBe(0);
+
+    const allowed = await injectEdit("/v1/images/edit-jobs", allowedKey);
+    expect(allowed.statusCode).toBe(200);
+    const allowedJob = await waitForJob(allowedKey, allowed.json().jobId);
+    expect(allowedJob.status).toBe("ok");
+    expect(calls.edit).toBe(1);
   });
 });
