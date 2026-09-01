@@ -51,7 +51,7 @@ function toUserView(u: UserRow) {
   };
 }
 
-function validateChannelInput(b: Record<string, unknown>): { name?: string; type?: ChannelType; baseUrl?: string; timeoutMs?: number; editMode?: EditMode; extraHeaders?: Record<string, string>; enabled?: boolean } {
+function validateChannelInput(b: Record<string, unknown>): { name?: string; type?: ChannelType; baseUrl?: string; timeoutMs?: number; concurrency?: number; editMode?: EditMode; extraHeaders?: Record<string, string>; enabled?: boolean } {
   const out: Record<string, unknown> = {};
   if (b.name !== undefined) {
     if (typeof b.name !== "string" || !b.name.trim()) throw httpError(400, "'name' must be a non-empty string");
@@ -72,6 +72,12 @@ function validateChannelInput(b: Record<string, unknown>): { name?: string; type
       throw httpError(400, "'timeoutMs' must be a number >= 1000");
     }
     out.timeoutMs = b.timeoutMs;
+  }
+  if (b.concurrency !== undefined) {
+    if (typeof b.concurrency !== "number" || !Number.isInteger(b.concurrency) || b.concurrency < 1) {
+      throw httpError(400, "'concurrency' must be an integer >= 1");
+    }
+    out.concurrency = b.concurrency;
   }
   if (b.editMode !== undefined) {
     if (b.editMode !== "auto" && b.editMode !== "multipart" && b.editMode !== "json-base64") {

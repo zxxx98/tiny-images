@@ -6,7 +6,7 @@ import type { ChannelType } from "../core/types.js";
 import type { Repo } from "./repo.js";
 
 interface SeedConfig {
-  channels?: { name: string; type?: ChannelType; baseUrl: string; keys?: string[]; timeoutMs?: number; editMode?: string; extraHeaders?: Record<string, string> }[];
+  channels?: { name: string; type?: ChannelType; baseUrl: string; keys?: string[]; timeoutMs?: number; concurrency?: number; editMode?: string; extraHeaders?: Record<string, string> }[];
   models?: { name: string; channel: string; upstream?: string; supportsImageToImage?: boolean }[];
 }
 
@@ -27,6 +27,7 @@ export function seedIfEmpty(dataDir: string, repo: Repo): void {
       type: ch.type,
       baseUrl: ch.baseUrl,
       timeoutMs: ch.timeoutMs,
+      concurrency: ch.concurrency,
       editMode: ch.editMode as never,
       extraHeaders: ch.extraHeaders,
     });

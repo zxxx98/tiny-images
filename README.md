@@ -71,6 +71,7 @@ channels:
     baseUrl: https://api.openai.com/v1
     keys: [sk-xxx]
     timeoutMs: 120000
+    concurrency: 2
   - name: horde
     type: ai-horde
     baseUrl: https://aihorde.net/api/v2

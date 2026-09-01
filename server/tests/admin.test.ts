@@ -82,14 +82,16 @@ describe("/admin/channels", () => {
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().type).toBe("ai-horde");
+    expect(created.json().concurrency).toBe(2);
 
     const patched = await app.inject({
       method: "PATCH",
       url: `/admin/channels/${created.json().id}`,
       headers: H,
-      payload: { type: "openai-compat" },
+      payload: { type: "openai-compat", concurrency: 4 },
     });
     expect(patched.json().type).toBe("openai-compat");
+    expect(patched.json().concurrency).toBe(4);
 
     const invalid = await app.inject({
       method: "POST",
@@ -99,6 +101,17 @@ describe("/admin/channels", () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.message).toContain("'type'");
+
+    for (const concurrency of [0, 1.5, "2"]) {
+      const badConcurrency = await app.inject({
+        method: "PATCH",
+        url: `/admin/channels/${created.json().id}`,
+        headers: H,
+        payload: { concurrency },
+      });
+      expect(badConcurrency.statusCode).toBe(400);
+      expect(badConcurrency.json().error.message).toContain("'concurrency'");
+    }
   });
 
   it("returns channel health summary", async () => {

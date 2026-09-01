@@ -7,6 +7,7 @@ export interface ChannelConfig {
   type: ChannelType;
   baseUrl: string;
   timeoutMs: number;
+  concurrency: number;
   editMode: EditMode;
   extraHeaders: Record<string, string>;
   enabled: boolean;

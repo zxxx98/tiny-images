@@ -119,6 +119,9 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE models ADD COLUMN supports_image_to_image INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  ALTER TABLE channels ADD COLUMN concurrency INTEGER NOT NULL DEFAULT 2;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

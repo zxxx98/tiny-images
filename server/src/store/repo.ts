@@ -8,6 +8,7 @@ export interface ChannelRow {
   type: ChannelType;
   baseUrl: string;
   timeoutMs: number;
+  concurrency: number;
   editMode: EditMode;
   extraHeaders: Record<string, string>;
   enabled: boolean;
@@ -121,6 +122,7 @@ export interface ChannelInput {
   type?: ChannelType;
   baseUrl: string;
   timeoutMs?: number;
+  concurrency?: number;
   editMode?: EditMode;
   extraHeaders?: Record<string, string>;
   enabled?: boolean;
@@ -189,14 +191,15 @@ export class Repo {
     try {
       const res = this.db
         .prepare(
-          `INSERT INTO channels (name, type, base_url, timeout_ms, edit_mode, extra_headers, enabled, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO channels (name, type, base_url, timeout_ms, concurrency, edit_mode, extra_headers, enabled, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.name,
           input.type ?? "openai-compat",
           input.baseUrl,
           input.timeoutMs ?? 120000,
+          input.concurrency ?? 2,
           input.editMode ?? "auto",
           JSON.stringify(input.extraHeaders ?? {}),
           input.enabled === false ? 0 : 1,
@@ -225,8 +228,8 @@ export class Repo {
     const merged = { ...existing, ...patch };
     try {
       this.db
-        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
-        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
+        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, concurrency = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
+        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.concurrency, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`channel name '${merged.name}' already exists`);
       throw err;
@@ -246,6 +249,7 @@ export class Repo {
       type: String(row.type) as ChannelType,
       baseUrl: String(row.base_url),
       timeoutMs: Number(row.timeout_ms),
+      concurrency: Number(row.concurrency),
       editMode: String(row.edit_mode) as EditMode,
       extraHeaders: JSON.parse(String(row.extra_headers ?? "{}")) as Record<string, string>,
       enabled: Number(row.enabled) === 1,

@@ -23,6 +23,7 @@ describe("channels", () => {
     expect(c.type).toBe("openai-compat");
     expect(c.enabled).toBe(true);
     expect(c.timeoutMs).toBe(120000);
+    expect(c.concurrency).toBe(2);
     expect(() => repo.createChannel({ name: "a", baseUrl: "https://y/v1" })).toThrow(ConflictError);
   });
   it("updates and deletes", () => {
@@ -37,6 +38,11 @@ describe("channels", () => {
     const c = repo.createChannel({ name: "h", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" });
     expect(c.type).toBe("ai-horde");
     expect(repo.updateChannel(c.id, { type: "openai-compat" })?.type).toBe("openai-compat");
+  });
+  it("persists channel concurrency on create and update", () => {
+    const c = repo.createChannel({ name: "limited", baseUrl: "https://x/v1", concurrency: 4 });
+    expect(c.concurrency).toBe(4);
+    expect(repo.updateChannel(c.id, { concurrency: 7 })?.concurrency).toBe(7);
   });
 });
 

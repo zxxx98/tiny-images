@@ -44,6 +44,7 @@ channels:
     baseUrl: https://api.openai.com/v1
     keys: [sk-a, sk-b]
     timeoutMs: 90000
+    concurrency: 4
 models:
   - name: gpt-image-1
     channel: openai
@@ -54,6 +55,7 @@ models:
     expect(c.name).toBe("openai");
     expect(c.type).toBe("ai-horde");
     expect(c.timeoutMs).toBe(90000);
+    expect(c.concurrency).toBe(4);
     expect(repo.listKeys(c.id)).toHaveLength(2);
     expect(repo.listModels()[0].publicName).toBe("gpt-image-1");
     expect(repo.listModels()[0].upstreamName).toBe("gpt-image-1");
