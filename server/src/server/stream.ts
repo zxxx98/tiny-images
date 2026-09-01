@@ -76,12 +76,12 @@ async function recordStreamGeneration(
   images: { b64?: string; url?: string; revisedPrompt?: string }[],
 ): Promise<void> {
   try {
-    const historyImages: { file: string; revisedPrompt?: string }[] = [];
+    const historyImages: { file: string; width: number; height: number; revisedPrompt?: string }[] = [];
     if (status === "ok") {
       const timeoutMs = 30_000;
       for (const img of images) {
         const saved = await localizeImage(ctx.deps.env.dataDir, img, timeoutMs);
-        if (saved) historyImages.push({ file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) });
+        if (saved) historyImages.push({ ...saved, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) });
       }
     }
     ctx.deps.repo.insertGeneration({
