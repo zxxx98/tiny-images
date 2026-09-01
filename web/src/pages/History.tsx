@@ -52,14 +52,18 @@ export function historyItemLabel(item: Pick<HistoryItem, "prompt" | "params">): 
 
 export function historyItemSize(item: Pick<HistoryItem, "params">): string {
   const params = item.params;
+  const targetWidth = params?.targetWidth;
+  const targetHeight = params?.targetHeight;
   if (
     params?.operation === "upscale" &&
-    Number.isInteger(params.targetWidth) &&
-    params.targetWidth > 0 &&
-    Number.isInteger(params.targetHeight) &&
-    params.targetHeight > 0
+    typeof targetWidth === "number" &&
+    Number.isInteger(targetWidth) &&
+    targetWidth > 0 &&
+    typeof targetHeight === "number" &&
+    Number.isInteger(targetHeight) &&
+    targetHeight > 0
   ) {
-    return `${params.targetWidth}x${params.targetHeight}`;
+    return `${targetWidth}x${targetHeight}`;
   }
   return typeof params?.size === "string" && params.size.length > 0 ? params.size : "auto";
 }
