@@ -111,6 +111,7 @@ describe("POST /v1/images/jobs", () => {
     expect(body.status).toBe("ok");
     expect(body.channel).toBe("mock");
     const images = body.images as { file: string; url: string; revisedPrompt?: string }[];
+    expect(images[0]).toMatchObject({ width: 1, height: 1 });
     expect(images[0].url).toMatch(/\/files\/[0-9a-f]{32}\.png$/);
     expect(images[0].revisedPrompt).toBe("rev");
     expect(fs.existsSync(path.join(dir, "generated", images[0].file))).toBe(true);
@@ -118,7 +119,7 @@ describe("POST /v1/images/jobs", () => {
     expect(rows[0].status).toBe("ok");
     expect(rows[0].prompt).toBe("cat");
     expect(JSON.parse(rows[0].params).horde).toEqual({ shared: false, params: { seed: "7" } });
-    expect(JSON.parse(rows[0].images)[0].file).toBe(images[0].file);
+    expect(JSON.parse(rows[0].images)[0]).toMatchObject({ file: images[0].file, width: 1, height: 1 });
   });
 
   it("poll 404 for other key and unknown id", async () => {
@@ -311,6 +312,7 @@ describe("POST /v1/images/generations records history", () => {
     const rows = repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10);
     expect(rows[0].status).toBe("ok");
     const img = JSON.parse(rows[0].images)[0];
+    expect(img).toMatchObject({ width: 1, height: 1 });
     expect(img.file).toMatch(/\.png$/);
     expect(fs.existsSync(path.join(dir, "generated", img.file))).toBe(true);
   });

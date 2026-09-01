@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { UpstreamError } from "../core/errors.js";
 import type { UnifiedImage } from "../core/types.js";
 
@@ -22,6 +23,22 @@ export function saveGeneratedImage(dataDir: string, b64: string): { fileName: st
   const fileName = `${randomBytes(16).toString("hex")}${sniffExt(buf)}`;
   fs.writeFileSync(path.join(generatedDir(dataDir), fileName), buf);
   return { fileName };
+}
+
+export interface LocalizedImage {
+  file: string;
+  width: number;
+  height: number;
+}
+
+async function readImageDimensions(buffer: Buffer): Promise<{ width: number; height: number }> {
+  const metadata = await sharp(buffer, { failOn: "error" }).metadata();
+  const width = metadata.autoOrient?.width ?? metadata.width;
+  const height = metadata.autoOrient?.height ?? metadata.height;
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    throw new Error("generated image has no valid dimensions");
+  }
+  return { width, height };
 }
 
 export function sweepExpired(dataDir: string, ttlMs: number): number {
@@ -94,15 +111,13 @@ export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[
 }
 
 // 结果图片本地化供历史引用；下载失败不影响主流程，返回 null
-export async function localizeImage(dataDir: string, img: UnifiedImage, fetchTimeoutMs: number): Promise<{ file: string } | null> {
+export async function localizeImage(dataDir: string, img: UnifiedImage, fetchTimeoutMs: number): Promise<LocalizedImage | null> {
   try {
-    if (img.b64 !== undefined) return { file: saveGeneratedImage(dataDir, img.b64).fileName };
-    if (img.url !== undefined) {
-      const b64 = await fetchAsB64(img.url, fetchTimeoutMs, undefined, "history");
-      return { file: saveGeneratedImage(dataDir, b64).fileName };
-    }
+    const b64 = img.b64 !== undefined ? img.b64 : img.url !== undefined ? await fetchAsB64(img.url, fetchTimeoutMs, undefined, "history") : undefined;
+    if (b64 === undefined) return null;
+    const dimensions = await readImageDimensions(Buffer.from(b64, "base64"));
+    return { file: saveGeneratedImage(dataDir, b64).fileName, ...dimensions };
   } catch {
     return null;
   }
-  return null;
 }

@@ -1,8 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
-import { conformImages } from "../media/b64cache.js";
-import { localizeImage } from "../media/b64cache.js";
+import { conformImages, localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
 import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
@@ -119,15 +118,18 @@ export function registerGenerations(ctx: AppContext): void {
 }
 
 // 兼容端点同样进历史：从响应里提取图片并本地化落盘（失败忽略该张）
-export async function extractHistoryImages(ctx: AppContext, body: Record<string, unknown>): Promise<{ file: string; revisedPrompt?: string }[]> {
-  const out: { file: string; revisedPrompt?: string }[] = [];
+export async function extractHistoryImages(
+  ctx: AppContext,
+  body: Record<string, unknown>,
+): Promise<{ file: string; width: number; height: number; revisedPrompt?: string }[]> {
+  const out: { file: string; width: number; height: number; revisedPrompt?: string }[] = [];
   const items = ((body.data as unknown) as Record<string, unknown>[] | undefined) ?? [];
   for (const item of items) {
     const url = typeof item.url === "string" ? item.url : undefined;
     const b64 = typeof item.b64_json === "string" ? item.b64_json : undefined;
     const revisedPrompt = typeof item.revised_prompt === "string" ? item.revised_prompt : undefined;
     const saved = await localizeImage(ctx.deps.env.dataDir, { b64, url }, 30_000);
-    if (saved) out.push({ file: saved.file, ...(revisedPrompt !== undefined ? { revisedPrompt } : {}) });
+    if (saved) out.push({ ...saved, ...(revisedPrompt !== undefined ? { revisedPrompt } : {}) });
   }
   return out;
 }
@@ -140,7 +142,7 @@ export async function recordGeneration(
   status: "ok" | "error",
   latencyMs: number,
   errorMessage: string | null,
-  images: { file: string; revisedPrompt?: string }[],
+  images: { file: string; width: number; height: number; revisedPrompt?: string }[],
 ): Promise<void> {
   try {
     ctx.deps.repo.insertGeneration({

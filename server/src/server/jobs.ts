@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 
 export interface JobImage {
   file: string;
+  width?: number;
+  height?: number;
   revisedPrompt?: string;
 }
 

@@ -130,11 +130,11 @@ async function runUpscaleJob(
           targetWidth: input.targetWidth,
           targetHeight: input.targetHeight,
         });
-        return saveUpscaleOutput(ctx.deps.env.dataDir, output);
+        return { fileName: saveUpscaleOutput(ctx.deps.env.dataDir, output), width: output.width, height: output.height };
       },
     );
     const latencyMs = Date.now() - started;
-    ctx.deps.jobManager.addImage(jobId, { file: fileName });
+    ctx.deps.jobManager.addImage(jobId, { file: fileName.fileName, width: fileName.width, height: fileName.height });
     ctx.deps.jobManager.setProgress(jobId, "超分完成");
     ctx.deps.jobManager.finish(jobId, {
       status: "ok",
@@ -148,7 +148,7 @@ async function runUpscaleJob(
       channelId: null,
       latencyMs,
       errorMessage: null,
-      images: JSON.stringify([{ file: fileName }]),
+      images: JSON.stringify([{ file: fileName.fileName, width: fileName.width, height: fileName.height }]),
     });
     removeStagedUpscaleInput(staged.fullPath);
   } catch (err) {

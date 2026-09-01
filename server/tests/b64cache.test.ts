@@ -2,8 +2,9 @@ import Fastify from "fastify";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { conformImages, saveGeneratedImage, sweepExpired } from "../src/media/b64cache.js";
+import { conformImages, localizeImage, saveGeneratedImage, sweepExpired } from "../src/media/b64cache.js";
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 let upstream: ReturnType<typeof Fastify>;
@@ -76,15 +77,20 @@ describe("saveGeneratedImage + sweepExpired", () => {
 
 describe("localizeImage", () => {
   it("saves b64, downloads url, returns null on missing/failed content", async () => {
-    const { localizeImage } = await import("../src/media/b64cache.js");
-    const fromB64 = await localizeImage(dir, { b64: PNG_B64 }, 1000);
+    const source = await sharp({
+      create: { width: 2, height: 3, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } },
+    }).png().toBuffer();
+    const sourceB64 = source.toString("base64");
+    const fromB64 = await localizeImage(dir, { b64: sourceB64 }, 1000);
     expect(fromB64?.file).toMatch(/\.png$/);
+    expect(fromB64).toMatchObject({ width: 2, height: 3 });
     expect(fs.existsSync(path.join(dir, "generated", fromB64!.file))).toBe(true);
 
-    upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(source));
     const b = await start();
     const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000);
     expect(fromUrl?.file).toMatch(/\.png$/);
+    expect(fromUrl).toMatchObject({ width: 2, height: 3 });
 
     expect(await localizeImage(dir, {}, 1000)).toBeNull();
     expect(await localizeImage(dir, { url: "http://127.0.0.1:1/img.png" }, 1000)).toBeNull();

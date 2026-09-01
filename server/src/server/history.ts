@@ -6,11 +6,11 @@ import { localizeImage } from "../media/b64cache.js";
 import type { GenerationRow } from "../store/repo.js";
 import { parseEditMultipart } from "./edits.js";
 import { fileBaseUrlFor, validateGenBody } from "./generations.js";
-import type { JobManager, JobRecord } from "./jobs.js";
+import type { JobImage, JobManager, JobRecord } from "./jobs.js";
 
-type ApiImage = { file: string; url: string; revisedPrompt?: string };
+type ApiImage = JobImage & { url: string };
 
-function toApiImages(ctx: AppContext, req: FastifyRequest, images: { file: string; revisedPrompt?: string }[]): ApiImage[] {
+function toApiImages(ctx: AppContext, req: FastifyRequest, images: JobImage[]): ApiImage[] {
   const base = fileBaseUrlFor(ctx, req);
   return images.map((img) => ({ ...img, url: `${base}/files/${img.file}` }));
 }
@@ -81,11 +81,16 @@ async function runJob(
       callerUserId: routeOpts.callerUserId,
       allowedChannelIds: routeOpts.allowedChannelIds,
     });
-    const images: { file: string; revisedPrompt?: string }[] = [];
+    const images: JobImage[] = [];
     for (const img of r.result.images) {
       const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
       if (saved) {
-        const entry = { file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) };
+        const entry: JobImage = {
+          file: saved.file,
+          width: saved.width,
+          height: saved.height,
+          ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}),
+        };
         images.push(entry);
         jobManager.addImage(jobId, entry);
       }
@@ -121,12 +126,17 @@ async function runEditJob(
       callerUserId: routeOpts.callerUserId,
       allowedChannelIds: routeOpts.allowedChannelIds,
     });
-    const images: { file: string; revisedPrompt?: string }[] = [];
+    const images: JobImage[] = [];
     if (r.result.images.length === 0) throw new Error("edit job returned no images to localize");
     for (const img of r.result.images) {
       const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
       if (!saved) throw new Error("failed to localize an edited image");
-      images.push({ file: saved.file, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) });
+      images.push({
+        file: saved.file,
+        width: saved.width,
+        height: saved.height,
+        ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}),
+      });
     }
     for (const image of images) ctx.deps.jobManager.addImage(jobId, image);
     ctx.deps.jobManager.finish(jobId, {
