@@ -80,7 +80,7 @@ export async function finishSync(
   const routeOpts = {
     callerApiKeyId: req.callerApiKeyId ?? null,
     callerUserId: req.callerUserId ?? null,
-    allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
+    modelAccess: ctx.deps.repo.modelAccessPolicy(req.callerUserId ?? null),
     signal,
   };
   const r =

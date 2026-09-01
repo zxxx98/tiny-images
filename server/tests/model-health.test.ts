@@ -70,7 +70,7 @@ afterEach(async () => {
 function createRoute(
   model: string,
   channelName: string,
-  options: { channelEnabled?: boolean; key?: boolean; supportsImageToImage?: boolean; priority?: number } = {},
+  options: { channelEnabled?: boolean; key?: boolean; supportsImageToImage?: boolean; supportsNsfw?: boolean; priority?: number } = {},
 ) {
   const channel = repo.createChannel({
     name: channelName,
@@ -85,6 +85,7 @@ function createRoute(
     upstreamName: `upstream-${channelName}`,
     priority: options.priority,
     supportsImageToImage: options.supportsImageToImage,
+    supportsNsfw: options.supportsNsfw,
   });
   return { channel, key, mapping };
 }
@@ -130,6 +131,14 @@ describe("GET /v1/model-health authentication", () => {
 });
 
 describe("GET /v1/model-health visibility and aggregation", () => {
+  it("hides NSFW mappings until the user is explicitly allowed", async () => {
+    createRoute("safe", "safe-route");
+    createRoute("adult", "adult-route", { supportsNsfw: true });
+    expect((await getHealth()).json().models.map((model: { model: string }) => model.model)).toEqual(["safe"]);
+
+    repo.updateUser(userId, { allowNsfw: true });
+    expect((await getHealth()).json().models.map((model: { model: string }) => model.model)).toEqual(["safe", "adult"]);
+  });
   it("filters mappings and logs by allowedChannelIds", async () => {
     const visible = createRoute("shared", "visible");
     const hidden = createRoute("shared", "hidden");

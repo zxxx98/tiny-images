@@ -4,14 +4,15 @@ import { registerEdits } from "./edits.js";
 import { registerHistory } from "./history.js";
 import { buildModelHealth } from "./modelHealth.js";
 import { registerUpscale } from "./upscale.js";
+import { modelAllowedByPolicy } from "../core/router.js";
 
 export function registerV1(ctx: AppContext): void {
   ctx.app.get("/v1/models", { preHandler: ctx.requireApiKey }, async (req) => {
-    const allowed = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
+    const policy = ctx.deps.repo.modelAccessPolicy(req.callerUserId ?? null);
     const seen = new Set<string>();
     const models = ctx.deps.repo
       .listEnabledModels()
-      .filter((m) => !allowed || allowed.includes(m.channelId))
+      .filter((m) => modelAllowedByPolicy(m, policy))
       .filter((m) => (seen.has(m.publicName) ? false : (seen.add(m.publicName), true)));
     return {
       object: "list",
@@ -24,8 +25,8 @@ export function registerV1(ctx: AppContext): void {
     };
   });
   ctx.app.get("/v1/model-health", { preHandler: ctx.requireUser }, async (req) => {
-    const allowed = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
-    return buildModelHealth(ctx.deps.repo, ctx.deps.router, allowed);
+    const policy = ctx.deps.repo.modelAccessPolicy(req.callerUserId ?? null);
+    return buildModelHealth(ctx.deps.repo, ctx.deps.router, policy);
   });
   registerGenerations(ctx);
   registerEdits(ctx);

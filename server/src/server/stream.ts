@@ -18,8 +18,8 @@ export async function streamImageFlow(
   fileBaseUrl: string,
 ): Promise<void> {
   // 路由错误发生在流开始前，仍以 JSON 错误返回
-  const allowedChannelIds = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
-  const route = ctx.deps.router.resolve(model, allowedChannelIds);
+  const modelAccess = ctx.deps.repo.modelAccessPolicy(req.callerUserId ?? null);
+  const route = ctx.deps.router.resolve(model, modelAccess);
   if (!route) throw new ModelNotFoundError(model);
   const signal = requestSignal(req, reply);
 
@@ -30,7 +30,7 @@ export async function streamImageFlow(
   const routeOpts = {
     callerApiKeyId: req.callerApiKeyId ?? null,
     callerUserId: req.callerUserId ?? null,
-    allowedChannelIds,
+    modelAccess,
     signal,
   };
   const callerApiKeyId = req.callerApiKeyId ?? null;

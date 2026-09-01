@@ -1,4 +1,5 @@
-import type { ModelRouter } from "../core/router.js";
+import { modelAllowedByPolicy, type ModelRouter } from "../core/router.js";
+import type { ModelAccessPolicy } from "../core/types.js";
 import type { ChannelRow, LogRow, ModelRow, Repo } from "../store/repo.js";
 
 export const MODEL_HEALTH_SAMPLE_LIMIT = 50;
@@ -111,13 +112,12 @@ export function aggregateModelHealth(input: ModelHealthInput): ModelHealthView[]
 export function buildModelHealth(
   repo: Repo,
   router: ModelRouter,
-  allowedChannelIds: number[] | null,
+  policy: ModelAccessPolicy,
   now = Date.now(),
 ): { generatedAt: number; sampleLimit: number; models: ModelHealthView[] } {
-  const allowed = allowedChannelIds === null ? null : new Set(allowedChannelIds);
   const mappings = repo
     .listEnabledModels()
-    .filter((mapping) => allowed === null || allowed.has(mapping.channelId));
+    .filter((mapping) => modelAllowedByPolicy(mapping, policy));
   const visibleChannelIds = new Set(mappings.map((mapping) => mapping.channelId));
   const channels = repo.listChannels().filter((channel) => visibleChannelIds.has(channel.id));
   const logs = repo
