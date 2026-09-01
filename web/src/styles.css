@@ -602,6 +602,16 @@ textarea:disabled {
   white-space: nowrap;
 }
 
+.upscale-preview {
+  max-width: 180px;
+}
+
+.upscale-preview img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
 .gallery .shot:only-child {
   grid-column: 1 / -1;
 }
@@ -1405,6 +1415,7 @@ details textarea {
 }
 .history-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }

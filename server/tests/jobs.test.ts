@@ -6,6 +6,7 @@ describe("JobManager", () => {
     const jm = new JobManager();
     const job = jm.create({ apiKeyId: 1, userId: null, generationId: 10, model: "m", prompt: "p" });
     expect(jm.get(job.id, { apiKeyId: 1, userId: null, admin: false })?.status).toBe("running");
+    expect(jm.get(job.id, { apiKeyId: 1, userId: null, admin: false })?.kind).toBe("generate");
     expect(jm.get(job.id, { apiKeyId: 2, userId: null, admin: false })).toBeNull();
     jm.setProgress(job.id, "generating");
     jm.addImage(job.id, { file: "a.png" });
@@ -19,7 +20,8 @@ describe("JobManager", () => {
 
   it("isolates user jobs while allowing the owning user's keys and admins", () => {
     const jm = new JobManager();
-    const job = jm.create({ apiKeyId: null, userId: 10, generationId: 10, model: "m", prompt: "p" });
+    const job = jm.create({ apiKeyId: null, userId: 10, generationId: 10, model: "m", prompt: "p", kind: "edit" });
+    expect(job.kind).toBe("edit");
 
     expect(jm.get(job.id, { apiKeyId: null, userId: 10, admin: false })).not.toBeNull();
     expect(jm.get(job.id, { apiKeyId: 7, userId: 10, admin: false })).not.toBeNull();

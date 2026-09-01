@@ -3,6 +3,7 @@ import { registerGenerations } from "./generations.js";
 import { registerEdits } from "./edits.js";
 import { registerHistory } from "./history.js";
 import { buildModelHealth } from "./modelHealth.js";
+import { registerUpscale } from "./upscale.js";
 
 export function registerV1(ctx: AppContext): void {
   ctx.app.get("/v1/models", { preHandler: ctx.requireApiKey }, async (req) => {
@@ -29,5 +30,6 @@ export function registerV1(ctx: AppContext): void {
   registerGenerations(ctx);
   registerEdits(ctx);
   registerHistory(ctx);
+  registerUpscale(ctx);
   // 流式（Task 12）在后续接入
 }

@@ -11,6 +11,7 @@ import { pruneExpiredGenerationHistory } from "./store/retention.js";
 import { seedIfEmpty, seedAdminIfEmpty } from "./store/seed.js";
 import { JobManager } from "./server/jobs.js";
 import path from "node:path";
+import { sweepExpiredUpscaleInputs } from "./media/upscale.js";
 
 const env = loadEnv();
 const db = openDb(env.dataDir);
@@ -48,6 +49,9 @@ const app = await buildApp({
 const sweep = (): void => {
   const sweptImages = sweepExpired(env.dataDir, 24 * 3600_000);
   if (sweptImages > 0) app.log.info(`swept ${sweptImages} expired generated images`);
+
+  const sweptUpscaleInputs = sweepExpiredUpscaleInputs(env.dataDir, 24 * 3600_000);
+  if (sweptUpscaleInputs > 0) app.log.info(`swept ${sweptUpscaleInputs} expired upscale input images`);
 
   const sweptHistory = pruneExpiredGenerationHistory(repo);
   if (sweptHistory > 0) app.log.info(`swept ${sweptHistory} expired generation records`);

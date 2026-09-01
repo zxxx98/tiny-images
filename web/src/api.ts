@@ -246,6 +246,12 @@ export interface Announcement {
 
 export const fetchAnnouncement = (): Promise<Announcement> => api<Announcement>("/v1/announcement");
 
+export interface Features {
+  upscale: boolean;
+}
+
+export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/features");
+
 // ---- 生成 job ----
 
 export interface JobImage {
@@ -254,7 +260,10 @@ export interface JobImage {
   revisedPrompt?: string;
 }
 
+export type JobKind = "generate" | "edit" | "upscale";
+
 export interface JobStatus {
+  kind?: JobKind;
   status: "running" | "ok" | "error";
   progress: string | null;
   channel: string | null;
@@ -268,8 +277,8 @@ export function createJob(body: Record<string, unknown>): Promise<{ jobId: strin
   return api<{ jobId: string }>("/v1/images/jobs", { method: "POST", body });
 }
 
-export async function createEditJob(form: FormData): Promise<{ jobId: string }> {
-  const res = await fetch("/v1/images/edit-jobs", {
+async function createMultipartJob(path: string, form: FormData): Promise<{ jobId: string }> {
+  const res = await fetch(path, {
     method: "POST",
     headers: { authorization: `Bearer ${getToken()}` },
     body: form,
@@ -281,6 +290,14 @@ export async function createEditJob(form: FormData): Promise<{ jobId: string }> 
   }
   if (!res.ok || !parsed.jobId) throw new ApiError(res.status, parsed);
   return { jobId: parsed.jobId };
+}
+
+export function createEditJob(form: FormData): Promise<{ jobId: string }> {
+  return createMultipartJob("/v1/images/edit-jobs", form);
+}
+
+export function createUpscaleJob(form: FormData): Promise<{ jobId: string }> {
+  return createMultipartJob("/v1/images/upscale-jobs", form);
 }
 
 export function fetchJob(id: string): Promise<JobStatus> {

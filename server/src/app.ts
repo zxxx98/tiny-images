@@ -39,7 +39,7 @@ export interface AppContext {
   requireUser: ReturnType<typeof makeRequireUser>;
 }
 
-const API_PREFIXES = ["/v1", "/admin", "/files"];
+const API_PREFIXES = ["/v1", "/admin", "/files", "/upscale-inputs"];
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
@@ -48,7 +48,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(multipart, {
-    limits: { fileSize: 50 * 1024 * 1024, files: 6 },
+    limits: { fileSize: 50 * 1024 * 1024, files: 6, fields: 100, parts: 106 },
   });
 
   // 带 content-type: application/json 但无 body 的请求按 {} 解析，

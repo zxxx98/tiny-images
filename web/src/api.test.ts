@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, fetchAnnouncement, fetchChannelHealth, fetchModelHealth, fetchSettings, saveSettings } from "./api";
+import { createEditJob, createUpscaleJob, fetchAnnouncement, fetchChannelHealth, fetchFeatures, fetchModelHealth, fetchSettings, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -43,6 +43,63 @@ describe("model health API", () => {
     );
 
     await expect(fetchModelHealth()).rejects.toThrow("health unavailable");
+  });
+});
+
+describe("features API", () => {
+  it("fetches authenticated frontend feature flags", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ upscale: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchFeatures()).resolves.toEqual({ upscale: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/features",
+      expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
+    );
+  });
+});
+
+describe("createUpscaleJob", () => {
+  it("posts multipart image, scale and response format to the upscale endpoint", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jobId: "upscale-job-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const form = new FormData();
+    form.append("image", new File(["image"], "source.png", { type: "image/png" }));
+    form.append("scale", "4");
+    form.append("response_format", "url");
+
+    await expect(createUpscaleJob(form)).resolves.toEqual({ jobId: "upscale-job-1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/images/upscale-jobs",
+      expect.objectContaining({ method: "POST", body: form, headers: { authorization: "Bearer web-token" } }),
+    );
+  });
+
+  it("surfaces upscale validation errors", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "'scale' must be 2 or 4" } }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(createUpscaleJob(new FormData())).rejects.toThrow("'scale' must be 2 or 4");
   });
 });
 

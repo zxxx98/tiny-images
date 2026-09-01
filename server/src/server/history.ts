@@ -17,6 +17,7 @@ function toApiImages(ctx: AppContext, req: FastifyRequest, images: { file: strin
 
 function serializeJob(ctx: AppContext, req: FastifyRequest, job: JobRecord): Record<string, unknown> {
   return {
+    kind: job.kind,
     status: job.status,
     progress: job.progress,
     channel: job.channelName,
@@ -167,7 +168,7 @@ export function registerHistory(ctx: AppContext): void {
       errorMessage: null,
       images: "[]",
     });
-    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: genReq.prompt });
+    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: genReq.prompt, kind: "generate" });
     void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId, {
       callerUserId: req.callerUserId ?? null,
       allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
@@ -192,7 +193,7 @@ export function registerHistory(ctx: AppContext): void {
       errorMessage: null,
       images: "[]",
     });
-    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: editReq.prompt });
+    const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: editReq.prompt, kind: "edit" });
     void runEditJob(ctx, job.id, model, editReq, apiKeyId, generationId, {
       callerUserId: userId,
       allowedChannelIds: ctx.deps.repo.allowedChannelIds(userId),

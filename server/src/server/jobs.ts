@@ -5,8 +5,11 @@ export interface JobImage {
   revisedPrompt?: string;
 }
 
+export type JobKind = "generate" | "edit" | "upscale";
+
 export interface JobRecord {
   id: string;
+  kind: JobKind;
   apiKeyId: number | null;
   userId: number | null;
   generationId: number;
@@ -34,9 +37,10 @@ export class JobManager {
 
   constructor(private readonly max = 200) {}
 
-  create(input: { apiKeyId: number | null; userId: number | null; generationId: number; model: string; prompt: string }): JobRecord {
+  create(input: { apiKeyId: number | null; userId: number | null; generationId: number; model: string; prompt: string; kind?: JobKind }): JobRecord {
     const job: JobRecord = {
       id: randomBytes(12).toString("hex"),
+      kind: input.kind ?? "generate",
       apiKeyId: input.apiKeyId,
       userId: input.userId,
       generationId: input.generationId,

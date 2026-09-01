@@ -8,11 +8,18 @@ interface HistoryImage {
   revisedPrompt?: string;
 }
 
+interface HistoryParams {
+  operation?: "upscale" | string;
+  scale?: number;
+  [key: string]: unknown;
+}
+
 interface HistoryItem {
   id: number;
   createdAt: number;
   model: string;
   prompt: string;
+  params?: HistoryParams;
   status: "pending" | "ok" | "error";
   latencyMs: number | null;
   errorMessage: string | null;
@@ -27,6 +34,15 @@ const PAGE_SIZE = 30;
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleString();
+}
+
+export function isUpscaleHistoryItem(item: Pick<HistoryItem, "params">): boolean {
+  return item.params?.operation === "upscale";
+}
+
+export function historyItemLabel(item: Pick<HistoryItem, "prompt" | "params">): string {
+  if (!isUpscaleHistoryItem(item)) return item.prompt;
+  return `图片超分 · ${item.params?.scale === 4 ? "4×" : "2×"}`;
 }
 
 export default function History() {
@@ -66,9 +82,12 @@ export default function History() {
     navigate("/", { state: { prompt: item.prompt, model: item.model } });
   };
 
-  // 把历史图片带入 Playground 的编辑模式
   const editImage = (url: string): void => {
     navigate("/", { state: { editImageUrl: url } });
+  };
+
+  const upscaleImage = (url: string): void => {
+    navigate("/", { state: { upscaleImageUrl: url } });
   };
 
   const copyPrompt = async (item: HistoryItem): Promise<void> => {
@@ -87,7 +106,7 @@ export default function History() {
   }, [detail]);
 
   const statusLabel = (item: HistoryItem): string =>
-    item.status === "ok" ? "成功" : item.status === "error" ? "失败" : "生成中";
+    item.status === "ok" ? "成功" : item.status === "error" ? "失败" : isUpscaleHistoryItem(item) ? "超分中" : "生成中";
 
   return (
     <div className="card">
@@ -106,6 +125,7 @@ export default function History() {
       <div className="history-wall">
         {items.map((item) => {
           const cover = item.images[0];
+          const label = historyItemLabel(item);
           return (
             <button
               key={item.id}
@@ -115,20 +135,20 @@ export default function History() {
                 setCopied(false);
                 setDetail(item);
               }}
-              title={item.prompt}
+              title={label}
             >
               <span className="wall-thumb">
                 {cover ? (
-                  <img src={cover.url} alt={item.prompt} loading="lazy" onError={markExpired} />
+                  <img src={cover.url} alt={label} loading="lazy" onError={markExpired} />
                 ) : (
                   <span className="expired wall-expired">
-                    {item.status === "error" ? "生成失败" : item.status === "pending" ? "生成中…" : "已过期"}
+                    {item.status === "error" ? (isUpscaleHistoryItem(item) ? "超分失败" : "生成失败") : item.status === "pending" ? (isUpscaleHistoryItem(item) ? "超分中…" : "生成中…") : "已过期"}
                   </span>
                 )}
                 {item.images.length > 1 && <span className="wall-count">×{item.images.length}</span>}
                 {item.status === "error" && <span className="wall-flag">失败</span>}
               </span>
-              <span className="wall-caption">{item.prompt}</span>
+              <span className="wall-caption">{label}</span>
             </button>
           );
         })}
@@ -151,17 +171,13 @@ export default function History() {
               <div className="detail-gallery">
                 {detail.images.map((img, i) => (
                   <figure key={i} className="shot">
-                    <img
-                      src={img.url}
-                      alt={`历史图片 ${i + 1}`}
-                      loading="lazy"
-                      title="点击进入图片编辑"
-                      onClick={() => editImage(img.url)}
-                      onError={markExpired}
-                    />
+                    <img src={img.url} alt={`历史图片 ${i + 1}`} loading="lazy" title="点击进入图片编辑" onClick={() => editImage(img.url)} onError={markExpired} />
                     <div className="shot-actions">
                       <button className="btn small" onClick={() => editImage(img.url)}>
                         编辑此图
+                      </button>
+                      <button className="btn small" onClick={() => upscaleImage(img.url)}>
+                        超分
                       </button>
                       <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
                         下载
@@ -175,33 +191,42 @@ export default function History() {
               <div className="detail-info">
                 <div className="history-meta">
                   <span className="pill">{fmtTime(detail.createdAt)}</span>
-                  <span className="pill">{detail.model}</span>
+                  <span className="pill">{historyItemLabel(detail)}</span>
+                  {!isUpscaleHistoryItem(detail) && <span className="pill">{detail.model}</span>}
                   <span className={`pill ${detail.status === "ok" ? "" : detail.status === "error" ? "error" : "off"}`}>
                     {statusLabel(detail)}
                   </span>
                   {detail.latencyMs !== null && <span className="pill">{detail.latencyMs} ms</span>}
                 </div>
-                <h3>Prompt</h3>
-                <p className="detail-prompt">{detail.prompt}</p>
-                {detail.images.some((img) => img.revisedPrompt) && (
+                {!isUpscaleHistoryItem(detail) && (
                   <>
-                    <h3>Revised Prompt</h3>
-                    {detail.images
-                      .filter((img) => img.revisedPrompt)
-                      .map((img, i) => (
-                        <p key={i} className="detail-prompt">
-                          {img.revisedPrompt}
-                        </p>
-                      ))}
+                    <h3>Prompt</h3>
+                    <p className="detail-prompt">{detail.prompt}</p>
+                    {detail.images.some((img) => img.revisedPrompt) && (
+                      <>
+                        <h3>Revised Prompt</h3>
+                        {detail.images
+                          .filter((img) => img.revisedPrompt)
+                          .map((img, i) => (
+                            <p key={i} className="detail-prompt">
+                              {img.revisedPrompt}
+                            </p>
+                          ))}
+                      </>
+                    )}
                   </>
                 )}
                 <div className="history-actions">
-                  <button className="btn small" onClick={() => void copyPrompt(detail)}>
-                    {copied ? "已复制 ✓" : "复制 Prompt"}
-                  </button>
-                  <button className="btn small" onClick={() => rerun(detail)}>
-                    用此 Prompt 重新生成
-                  </button>
+                  {!isUpscaleHistoryItem(detail) && (
+                    <>
+                      <button className="btn small" onClick={() => void copyPrompt(detail)}>
+                        {copied ? "已复制 ✓" : "复制 Prompt"}
+                      </button>
+                      <button className="btn small" onClick={() => rerun(detail)}>
+                        用此 Prompt 重新生成
+                      </button>
+                    </>
+                  )}
                   <button className="btn small danger" onClick={() => setDetail(null)}>
                     关闭
                   </button>

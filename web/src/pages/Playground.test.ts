@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchJobIfCurrent, startEditJob } from "./Playground";
+import { fetchJobIfCurrent, parseRunningJob, startEditJob, startMultipartJob } from "./Playground";
 
 describe("startEditJob", () => {
   it("hands the created edit job to the polling callback", async () => {
@@ -25,6 +25,29 @@ describe("startEditJob", () => {
     await pending;
 
     expect(onStarted).not.toHaveBeenCalled();
+  });
+});
+
+describe("startMultipartJob", () => {
+  it("hands an upscale job to the shared polling callback", async () => {
+    const form = new FormData();
+    const create = vi.fn().mockResolvedValue({ jobId: "upscale-job-1" });
+    const onStarted = vi.fn();
+
+    await startMultipartJob(form, onStarted, create);
+
+    expect(create).toHaveBeenCalledWith(form);
+    expect(onStarted).toHaveBeenCalledWith("upscale-job-1");
+  });
+});
+
+describe("parseRunningJob", () => {
+  it("recovers the new kind-aware storage format", () => {
+    expect(parseRunningJob(JSON.stringify({ id: "job-1", kind: "upscale" }))).toEqual({ id: "job-1", kind: "upscale" });
+  });
+
+  it("keeps recovering legacy bare job ids", () => {
+    expect(parseRunningJob("legacy-job-1")).toEqual({ id: "legacy-job-1" });
   });
 });
 

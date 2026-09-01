@@ -7,6 +7,7 @@
 - **OpenAI images 兼容 API**：`POST /v1/images/generations`、`POST /v1/images/edits`（multipart，含 JSON 回退）、`GET /v1/models`
 - **原生 AI Horde**：支持异步生成轮询、img2img 和 inpainting，并可通过 `horde` 命名空间传递 Horde 专属参数
 - **流式生成**：请求体 `"stream": true` 走 SSE（自定义协议，见下文）
+- **Cloudflare Images 超分**：可选的单图 2×/4× AI 放大后台任务，结果本地化到现有 `/files/*` 生命周期
 - **渠道与 key 池**：每渠道多 apiKey 轮询；401/403/429 自动冷却换 key 重试
 - **模型映射**：对外 model 名 → （渠道，上游 model 名）；启用中的映射名唯一
 - **b64 ↔ url 自动转换**：客户端要的格式与上游返回的不一致时自动转换（b64→url 落盘缓存 24h）
@@ -49,6 +50,14 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 | `ADMIN_PASSWORD` | 无 | 首次启动创建初始 admin 的密码（同上） |
 | `JWT_SECRET` | 自动生成 | 登录 token 签名密钥；默认生成并持久化到 `DATA_DIR/jwt_secret` |
 | `PUBLIC_BASE_URL` | 空 | 生成图对外 URL 的基地址；为空时按请求 Host 推导 |
+| `CLOUDFLARE_IMAGES_ENABLED` | `false` | 仅设为 `true` 时启用图片超分 |
+| `CLOUDFLARE_IMAGES_BASE_URL` | 空 | 启用时必填：接入 Cloudflare 代理并启用 Image Resizing 的 HTTPS 站点根地址；不得含路径、query、凭据，也不能是 localhost/IP |
+| `CLOUDFLARE_IMAGES_TIMEOUT_MS` | `120000` | Cloudflare 首次 AI 变换超时，范围 10000–300000 ms |
+| `UPSCALE_MAX_INPUT_BYTES` | `20971520` | 超分输入上限（20 MiB） |
+| `UPSCALE_MAX_INPUT_PIXELS` | `40000000` | 超分输入解码像素上限 |
+| `UPSCALE_MAX_DIMENSION` | `8192` | 放大后宽或高的上限 |
+| `UPSCALE_MAX_OUTPUT_BYTES` | `52428800` | Cloudflare 响应流上限（50 MiB） |
+| `UPSCALE_CONCURRENCY` | `2` | 单进程超分请求并发数，范围 1–16 |
 
 ### 管理设置
 
@@ -127,6 +136,27 @@ curl http://localhost:3000/v1/images/generations \
 `model` 映射、`n` 和明确的 `size` 优先于 `horde.params` 中的同名设置；`quality` 对 AI Horde 不生效。AI Horde 是 worker 排队式服务，耗时和模型可用性取决于当前在线 worker。
 
 `POST /v1/images/edits` 在没有 `mask` 时使用 img2img，有 `mask` 时使用 inpainting。每次只接受一张源图，mask 尺寸必须与源图一致；网关使用 `sharp` 将 PNG、JPEG 或 WebP 源图和 mask 转为 AI Horde 所需的 Base64 WebP。实际编辑能力仍取决于所选模型和在线 worker。
+
+### Cloudflare Images 图片超分
+
+此功能默认关闭，运行时不使用 Cloudflare API token。启用前需将 `CLOUDFLARE_IMAGES_BASE_URL` 对应域名接入 Cloudflare 代理，并在同一 Zone 启用 **Image Resizing / Transform Images**；该域名必须能回源访问本服务的随机 `/upscale-inputs/*` 路径。
+
+```bash
+CLOUDFLARE_IMAGES_ENABLED=true \
+CLOUDFLARE_IMAGES_BASE_URL=https://images.example.com \
+docker compose up -d
+```
+
+功能探测接口为 `GET /v1/features`。创建任务使用已鉴权的单图 multipart 请求，只接受 PNG、JPEG 或 WebP，`scale` 为 `2`（默认）或 `4`，`response_format` 仅支持 `url`：
+
+```bash
+curl http://localhost:3000/v1/images/upscale-jobs \
+  -H "Authorization: Bearer sk-tiny-…" \
+  -F "image=@source.png" \
+  -F "scale=2"
+```
+
+接口立即返回 `{"jobId":"…"}`，随后通过 `GET /v1/images/jobs/:id` 轮询 `running / ok / error`。服务端将输入暂存为随机文件，构造同站点 `/cdn-cgi/image/width=…,height=…,fit=contain,upscale=generate,format=auto/...` URL，严格验证 Cloudflare 输出后安全写入 `DATA_DIR/generated`。成功会立即删除暂存输入；失败暂存保留至 24 小时 TTL 清理。暂存目录与生成图会在启动时及每小时清理。
 
 ### 流式（SSE）
 
