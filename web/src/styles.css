@@ -1542,6 +1542,9 @@ details textarea {
   max-width: 80vw;
   word-break: break-all;
 }
+.gallery .shot img {
+  cursor: pointer;
+}
 .shot-actions {
   display: flex;
   gap: 6px;

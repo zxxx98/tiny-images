@@ -16,6 +16,11 @@ function LocationProbe() {
   return <pre data-testid="location-state">{JSON.stringify(location.state)}</pre>;
 }
 
+function PathProbe() {
+  const location = useLocation();
+  return <pre data-testid="location-path">{location.pathname}</pre>;
+}
+
 const upscaleItem = {
   id: 7,
   createdAt: 1,
@@ -68,7 +73,7 @@ describe("history upscale rows", () => {
       root.render(
         <MemoryRouter initialEntries={["/history"]}>
           <Routes>
-            <Route path="/history" element={<History />} />
+            <Route path="/history" element={<><History /><PathProbe /></>} />
             <Route path="/" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>,
@@ -96,7 +101,7 @@ describe("history upscale rows", () => {
       root.render(
         <MemoryRouter initialEntries={["/history"]}>
           <Routes>
-            <Route path="/history" element={<History />} />
+            <Route path="/history" element={<><History /><PathProbe /></>} />
             <Route path="/" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>,
@@ -111,6 +116,7 @@ describe("history upscale rows", () => {
 
     expect(container.querySelector(".detail-overlay")).not.toBeNull();
     expect(container.querySelector('[data-testid="location-state"]')).toBeNull();
+    expect(container.querySelector('[data-testid="location-path"]')?.textContent).toBe("/history");
   });
 
   it("navigates to edit mode only from the explicit edit action", async () => {
@@ -118,7 +124,7 @@ describe("history upscale rows", () => {
       root.render(
         <MemoryRouter initialEntries={["/history"]}>
           <Routes>
-            <Route path="/history" element={<History />} />
+            <Route path="/history" element={<><History /><PathProbe /></>} />
             <Route path="/" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>,
@@ -155,8 +161,18 @@ describe("history upscale rows", () => {
     expect(container.textContent).toContain("尺寸: 2048x1536");
     expect(container.textContent).toContain("尺寸: auto");
 
-    const tile = container.querySelector('.wall-tile[title="a cat"]') as HTMLButtonElement;
-    await act(async () => tile.click());
+    const normalTiles = Array.from(container.querySelectorAll('.wall-tile[title="a cat"]')) as HTMLButtonElement[];
+    const upscaleTile = container.querySelector('.wall-tile[title="图片超分 · 2×"]') as HTMLButtonElement;
+
+    await act(async () => normalTiles[0].click());
     expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 1024x1536");
+
+    await act(async () => (container.querySelector(".detail-overlay") as HTMLDivElement).click());
+    await act(async () => upscaleTile.click());
+    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 2048x1536");
+
+    await act(async () => (container.querySelector(".detail-overlay") as HTMLDivElement).click());
+    await act(async () => normalTiles[1].click());
+    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: auto");
   });
 });
