@@ -139,7 +139,8 @@ describe("Cloudflare upscale API", () => {
     expect(created.statusCode).toBe(200);
     const body = await waitJob(created.json().jobId);
     expect(body).toMatchObject({ kind: "upscale", status: "ok", progress: "超分完成", channel: null, error: null });
-    const images = body.images as { file: string; url: string }[];
+    const images = body.images as { file: string; url: string; width?: number; height?: number }[];
+    expect(images[0]).toMatchObject({ width: 8, height: 6 });
     expect(images[0].url).toBe(`https://api.example.com/files/${images[0].file}`);
     expect(fs.existsSync(path.join(dir, "generated", images[0].file))).toBe(true);
     expect(fs.readdirSync(path.join(dir, "upscale-inputs"))).toHaveLength(0);
@@ -158,7 +159,7 @@ describe("Cloudflare upscale API", () => {
       targetHeight: 6,
       engine: "cloudflare-images-esrgan",
     });
-    expect(JSON.parse(row.images)).toEqual([{ file: images[0].file }]);
+    expect(JSON.parse(row.images)).toEqual([{ file: images[0].file, width: 8, height: 6 }]);
   });
 
   it("leaves staging for TTL and records sanitized failure without final output", async () => {
