@@ -793,7 +793,28 @@ tbody tr:nth-child(even) {
   white-space: nowrap;
 }
 
-/* ---- 实体行 / keys ---- */
+.health-overview,
+.health-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.health-overview {
+  margin: 10px 0 12px;
+  padding: 8px;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+  background: var(--panel-yellow);
+}
+
+.health-details {
+  font-size: 12px;
+  padding: 2px 0 4px;
+}
+
 .entity {
   border-top: 4px solid;
   border-image: linear-gradient(to bottom, #808080 50%, #ffffff 50%) 1;

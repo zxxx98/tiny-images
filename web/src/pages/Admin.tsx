@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, type ApiKey, type Channel, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
+import { api, fetchChannelHealth, type ApiKey, type Channel, type ChannelHealth, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
 import GroupsTab from "./admin/GroupsTab";
 import UsersTab from "./admin/UsersTab";
 import SettingsTab from "./admin/SettingsTab";
@@ -60,19 +60,44 @@ export function changeChannelType(draft: Partial<Channel>, type: Channel["type"]
   return { ...draft, type, ...(addHordeDefault ? { baseUrl: "https://aihorde.net/api/v2" } : {}) };
 }
 
+const healthLabel: Record<ChannelHealth["status"], string> = {
+  disabled: "停用",
+  "no-key": "无可用 Key",
+  "circuit-open": "熔断中",
+  unknown: "暂无样本",
+  error: "有失败",
+  healthy: "正常",
+};
+
+const healthClass = (status: ChannelHealth["status"]): string =>
+  status === "healthy" ? "" : status === "unknown" ? "off" : "error";
+
+const fmtRate = (rate: number | null): string => (rate === null ? "—" : `${Math.round(rate * 100)}%`);
+const fmtLatency = (latency: number | null): string => (latency === null ? "—" : `${latency} ms`);
+
 function ChannelsTab() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [health, setHealth] = useState<ChannelHealth[]>([]);
   const [editing, setEditing] = useState<Partial<Channel> | null>(null);
   const [headersText, setHeadersText] = useState("{}");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = (): void => {
-    api<Channel[]>("/admin/channels")
-      .then(setChannels)
+    Promise.all([api<Channel[]>("/admin/channels"), fetchChannelHealth()])
+      .then(([nextChannels, nextHealth]) => {
+        setChannels(nextChannels);
+        setHealth(nextHealth);
+      })
       .catch((e) => setError(e.message));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") load();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // 编辑器里的 Headers 用独立草稿文本，失焦/保存时才解析，避免输入过程被重置
   const openEdit = (c: Partial<Channel> | null): void => {
@@ -145,6 +170,11 @@ function ChannelsTab() {
     load();
   };
 
+  const healthByChannel = new Map(health.map((item) => [item.channelId, item]));
+  const healthyCount = health.filter((item) => item.status === "healthy").length;
+  const errorCount = health.filter((item) => item.status === "error" || item.status === "circuit-open" || item.status === "no-key").length;
+  const availableKeys = health.reduce((sum, item) => sum + item.keys.available, 0);
+
   return (
     <div className="card">
       {msg && (
@@ -157,6 +187,14 @@ function ChannelsTab() {
           {error}
         </div>
       )}
+      <div className="health-overview" aria-label="渠道健康度总览">
+        <strong>健康度</strong>
+        <span className="pill">渠道 {channels.length}</span>
+        <span className="pill">正常 {healthyCount}</span>
+        <span className={`pill ${errorCount ? "error" : ""}`}>需关注 {errorCount}</span>
+        <span className="pill">可用 Key {availableKeys}</span>
+        <button className="btn small" onClick={load}>刷新</button>
+      </div>
       <button className="btn primary" onClick={() => openEdit(null)}>
         新建渠道
       </button>
@@ -233,6 +271,11 @@ function ChannelsTab() {
         <div key={c.id} className="entity">
           <div className="entity-head">
             <strong>{c.name}</strong>
+            {healthByChannel.get(c.id) && (
+              <span className={`pill ${healthClass(healthByChannel.get(c.id)!.status)}`}>
+                {healthLabel[healthByChannel.get(c.id)!.status]}
+              </span>
+            )}
             <span className="pill">{c.type === "ai-horde" ? "AI Horde" : "OpenAI Compatible"}</span>
             <span className={`pill ${c.enabled ? "" : "off"}`}>{c.enabled ? "启用" : "停用"}</span>
             <span className="muted mono">{c.baseUrl}</span>
@@ -250,6 +293,15 @@ function ChannelsTab() {
               删除
             </button>
           </div>
+          {healthByChannel.get(c.id) && (
+            <div className="health-details muted">
+              <span>请求样本 {healthByChannel.get(c.id)!.requests.sampleSize}</span>
+              <span>成功率 {fmtRate(healthByChannel.get(c.id)!.requests.successRate)}</span>
+              <span>平均延迟 {fmtLatency(healthByChannel.get(c.id)!.requests.averageLatencyMs)}</span>
+              <span>Key {healthByChannel.get(c.id)!.keys.available}/{healthByChannel.get(c.id)!.keys.enabled} 可用</span>
+              {healthByChannel.get(c.id)!.requests.lastError && <span className="error-cell">最近错误：{healthByChannel.get(c.id)!.requests.lastError}</span>}
+            </div>
+          )}
           <div className="keys">
             {(c.keys ?? []).map((k) => (
               <span key={k.id} className={`pill mono ${k.enabled ? "" : "off"}`}>

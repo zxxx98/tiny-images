@@ -118,6 +118,27 @@ export interface ChannelKey {
   cooldownUntil: number;
 }
 
+export interface ChannelHealth {
+  channelId: number;
+  name: string;
+  type: Channel["type"];
+  enabled: boolean;
+  status: "disabled" | "no-key" | "circuit-open" | "unknown" | "error" | "healthy";
+  keys: { total: number; enabled: number; available: number; coolingDown: number };
+  requests: {
+    sampleSize: number;
+    successful: number;
+    failed: number;
+    successRate: number | null;
+    averageLatencyMs: number | null;
+    lastRequestAt: number | null;
+    lastError: string | null;
+  };
+  circuit: { failureCount: number; coolingDown: boolean; cooldownUntil: number | null };
+}
+
+export const fetchChannelHealth = (): Promise<ChannelHealth[]> => api<ChannelHealth[]>("/admin/channel-health");
+
 export interface ModelMapping {
   id: number;
   publicName: string;
@@ -129,6 +150,7 @@ export interface ModelMapping {
   createdAt: number;
   channelName?: string | null;
 }
+
 
 export interface ApiKey {
   id: number;

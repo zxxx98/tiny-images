@@ -34,6 +34,15 @@ describe("ModelRouter", () => {
 });
 
 describe("ModelRouter failover + circuit breaker", () => {
+  it("round-robins mappings with the same priority", () => {
+    const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
+    const c2 = repo.createChannel({ name: "b", baseUrl: "https://y/v1" });
+    repo.createModel({ publicName: "img", channelId: c1.id, priority: 0 });
+    repo.createModel({ publicName: "img", channelId: c2.id, priority: 0 });
+    expect(router.resolve("img")!.channel.id).toBe(c1.id);
+    expect(router.resolve("img")!.channel.id).toBe(c2.id);
+    expect(router.resolve("img")!.channel.id).toBe(c1.id);
+  });
   it("falls back to next channel by priority when primary disabled/not allowed", () => {
     const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
     const c2 = repo.createChannel({ name: "b", baseUrl: "https://y/v1" });

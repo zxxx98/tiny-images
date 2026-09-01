@@ -101,6 +101,51 @@ export function registerAdmin(ctx: AppContext): void {
     return repo.listChannels().map((c) => ({ ...c, keys: repo.listKeys(c.id) }));
   });
 
+  ctx.app.get("/admin/channel-health", { preHandler: ctx.requireAdmin }, async () => {
+    const now = Date.now();
+    const logs = repo.recentLogs(50);
+    return repo.listChannels().map((channel) => {
+      const keys = repo.listKeys(channel.id);
+      const enabledKeys = keys.filter((key) => key.enabled);
+      const coolingKeys = enabledKeys.filter((key) => key.cooldownUntil > now);
+      const channelLogs = logs.filter((log) => log.channelId === channel.id);
+      const successful = channelLogs.filter((log) => log.status === "ok").length;
+      const latencies = channelLogs.flatMap((log) => (log.latencyMs === null ? [] : [log.latencyMs]));
+      const latest = channelLogs[0] ?? null;
+      const route = ctx.deps.router.health(channel.id);
+      let status: "disabled" | "no-key" | "circuit-open" | "unknown" | "error" | "healthy";
+      if (!channel.enabled) status = "disabled";
+      else if (enabledKeys.length === 0) status = "no-key";
+      else if (route.coolingDown) status = "circuit-open";
+      else if (channelLogs.length === 0) status = "unknown";
+      else if (successful < channelLogs.length) status = "error";
+      else status = "healthy";
+      return {
+        channelId: channel.id,
+        name: channel.name,
+        type: channel.type,
+        enabled: channel.enabled,
+        status,
+        keys: {
+          total: keys.length,
+          enabled: enabledKeys.length,
+          available: enabledKeys.length - coolingKeys.length,
+          coolingDown: coolingKeys.length,
+        },
+        requests: {
+          sampleSize: channelLogs.length,
+          successful,
+          failed: channelLogs.length - successful,
+          successRate: channelLogs.length === 0 ? null : successful / channelLogs.length,
+          averageLatencyMs: latencies.length === 0 ? null : Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length),
+          lastRequestAt: latest?.ts ?? null,
+          lastError: latest?.status === "error" ? latest.errorMessage : null,
+        },
+        circuit: route,
+      };
+    });
+  });
+
   ctx.app.post("/admin/channels", { preHandler: ctx.requireAdmin }, async (req, reply) => {
     const input = validateChannelInput(requireBody(req));
     if (!input.name || !input.baseUrl) throw httpError(400, "'name' and 'baseUrl' are required");

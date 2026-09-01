@@ -101,6 +101,19 @@ describe("/admin/channels", () => {
     expect(invalid.json().error.message).toContain("'type'");
   });
 
+  it("returns channel health summary", async () => {
+    const id = await createChannel("health");
+    const key = repo.createKey(id, "sk-health");
+    const other = repo.createChannel({ name: "empty", baseUrl: "https://empty.test/v1" });
+    repo.insertLog({ ts: 10, model: "img", channelId: id, apiKeyId: key.id, status: "ok", httpStatus: 200, latencyMs: 100, errorMessage: null });
+    repo.insertLog({ ts: 20, model: "img", channelId: id, apiKeyId: key.id, status: "error", httpStatus: 500, latencyMs: 300, errorMessage: "upstream failed" });
+    const res = await app.inject({ url: "/admin/channel-health", headers: H });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ channelId: id, status: "error", keys: expect.objectContaining({ total: 1, enabled: 1, available: 1, coolingDown: 0 }), requests: expect.objectContaining({ sampleSize: 2, successful: 1, failed: 1, successRate: 0.5, averageLatencyMs: 200 }) }),
+      expect.objectContaining({ channelId: other.id, status: "no-key" }),
+    ]));
+  });
   it("tests connectivity with the provider selected by channel type", async () => {
     const channel = repo.createChannel({ name: "horde", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" });
     repo.createKey(channel.id, "0000000000");

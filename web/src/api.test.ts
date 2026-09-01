@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, fetchAnnouncement, fetchSettings, saveSettings } from "./api";
+import { createEditJob, fetchAnnouncement, fetchChannelHealth, fetchSettings, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("channel health API", () => {
+  it("fetches channel health with authentication", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchChannelHealth()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledWith("/admin/channel-health", expect.objectContaining({ method: "GET" }));
+  });
+});
 describe("createEditJob", () => {
   it("posts multipart data to the detached edit-job endpoint", async () => {
     vi.stubGlobal("localStorage", { getItem: () => "web-token" });
