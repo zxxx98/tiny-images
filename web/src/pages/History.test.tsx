@@ -175,4 +175,54 @@ describe("history upscale rows", () => {
     await act(async () => normalTiles[1].click());
     expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: auto");
   });
+
+  it("prefers persisted image dimensions when the request size is auto", async () => {
+    vi.mocked(apiModule.api).mockResolvedValue({
+      items: [{
+        ...regularItem,
+        id: 11,
+        prompt: "persisted auto",
+        params: {},
+        images: [{ ...regularItem.images[0], width: 640, height: 480 }],
+      }],
+    } as never);
+
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={["/history"]}><History /></MemoryRouter>);
+      await flush();
+    });
+
+    expect(container.textContent).toContain("尺寸: 640x480");
+    expect(container.textContent).not.toContain("尺寸: auto");
+  });
+
+  it("learns real dimensions from a legacy image load and reuses them in detail", async () => {
+    vi.mocked(apiModule.api).mockResolvedValue({
+      items: [{
+        ...regularItem,
+        id: 12,
+        prompt: "legacy auto",
+        params: {},
+      }],
+    } as never);
+
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={["/history"]}><History /></MemoryRouter>);
+      await flush();
+    });
+
+    expect(container.textContent).toContain("尺寸: 未知");
+    const tile = container.querySelector('.wall-tile[title="legacy auto"]') as HTMLButtonElement;
+    const image = tile.querySelector("img") as HTMLImageElement;
+    Object.defineProperty(image, "naturalWidth", { configurable: true, value: 320 });
+    Object.defineProperty(image, "naturalHeight", { configurable: true, value: 240 });
+    await act(async () => {
+      image.dispatchEvent(new Event("load"));
+      await flush();
+    });
+
+    expect(container.textContent).toContain("尺寸: 320x240");
+    await act(async () => tile.click());
+    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 320x240");
+  });
 });
