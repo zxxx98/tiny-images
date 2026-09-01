@@ -152,6 +152,7 @@ export interface ModelHealth {
   model: string;
   status: ModelHealthStatus;
   supportsImageToImage: boolean;
+  supportsNsfw: boolean;
   routes: {
     total: number;
     available: number;
@@ -215,6 +216,7 @@ export interface UserView {
   quotaUsed: number;
   quotaRemaining: number | null;
   groupIds: number[];
+  allowNsfw: boolean;
 }
 
 export interface LogRow {

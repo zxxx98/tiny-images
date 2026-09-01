@@ -27,14 +27,14 @@ export default function UsersTab() {
     setError(null);
     try {
       if (editing.id) {
-        const body: Record<string, unknown> = { groupIds: editing.groupIds ?? [], enabled: editing.enabled };
+        const body: Record<string, unknown> = { groupIds: editing.groupIds ?? [], enabled: editing.enabled, allowNsfw: editing.allowNsfw ?? false };
         if (editing.quotaTotal !== undefined && editing.quotaTotal !== null) body.quotaTotal = editing.quotaTotal;
         if (editing.password) body.password = editing.password;
         await api(`/admin/users/${editing.id}`, { method: "PATCH", body });
       } else {
         await api("/admin/users", {
           method: "POST",
-          body: { email: editing.email, password: editing.password, quotaTotal: editing.quotaTotal, groupIds: editing.groupIds ?? [] },
+          body: { email: editing.email, password: editing.password, quotaTotal: editing.quotaTotal, groupIds: editing.groupIds ?? [], allowNsfw: editing.allowNsfw ?? false },
         });
       }
       setEditing(null);
@@ -60,6 +60,11 @@ export default function UsersTab() {
     load();
   };
 
+  const toggleNsfw = async (u: UserView): Promise<void> => {
+    await api(`/admin/users/${u.id}`, { method: "PATCH", body: { allowNsfw: !u.allowNsfw } });
+    load();
+  };
+
   const remove = async (u: UserView): Promise<void> => {
     if (!confirm(`删除用户 ${u.email}？其 API key 将解绑（保留但不再计额度）。`)) return;
     await api(`/admin/users/${u.id}`, { method: "DELETE" });
@@ -73,7 +78,7 @@ export default function UsersTab() {
           {error}
         </div>
       )}
-      <button className="btn primary" onClick={() => setEditing({ enabled: true, groupIds: [] })}>
+      <button className="btn primary" onClick={() => setEditing({ enabled: true, groupIds: [], allowNsfw: false })}>
         新建用户
       </button>
       {editing && (
@@ -115,6 +120,9 @@ export default function UsersTab() {
             ))}
             {groups.length === 0 && <span className="muted">尚无分组，可先在「分组」页创建。</span>}
           </div>
+          <label className="check">
+            <input type="checkbox" checked={editing.allowNsfw ?? false} onChange={(e) => setEditing({ ...editing, allowNsfw: e.target.checked })} /> 允许使用 NSFW 模型
+          </label>
           {editing.id && (
             <label className="check">
               <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
@@ -140,6 +148,7 @@ export default function UsersTab() {
               <th>状态</th>
               <th>额度</th>
               <th>分组</th>
+              <th>NSFW 权限</th>
               <th>创建时间</th>
               <th />
             </tr>
@@ -152,6 +161,7 @@ export default function UsersTab() {
                 <td>
                   <span className={`pill ${u.enabled ? "" : "off"}`}>{u.enabled ? "启用" : "禁用"}</span>
                 </td>
+                <td><span className={`pill ${u.allowNsfw ? "" : "off"}`}>{u.allowNsfw ? "允许" : "禁止"}</span></td>
                 <td>{u.quotaRemaining === null ? "不限" : `${u.quotaRemaining}/${u.quotaTotal}（已用 ${u.quotaUsed}）`}</td>
                 <td>
                   {(u.groupIds ?? []).length === 0
@@ -162,6 +172,7 @@ export default function UsersTab() {
                 </td>
                 <td className="muted">{fmtTime(u.createdAt)}</td>
                 <td>
+                  <button className="btn small" onClick={() => toggleNsfw(u)}>{u.allowNsfw ? "禁止 NSFW" : "允许 NSFW"}</button>{" "}
                   {u.role === "user" && (
                     <>
                       <button className="btn small" onClick={() => setEditing({ ...u })}>
