@@ -103,6 +103,7 @@ export interface Channel {
   type: "openai-compat" | "ai-horde";
   baseUrl: string;
   timeoutMs: number;
+  concurrency: number;
   editMode: "auto" | "multipart" | "json-base64";
   extraHeaders: Record<string, string>;
   enabled: boolean;

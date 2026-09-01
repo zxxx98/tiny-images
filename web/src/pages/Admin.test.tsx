@@ -9,6 +9,7 @@ describe("channel type form state", () => {
       type: "openai-compat",
       editMode: "auto",
       timeoutMs: 120000,
+      concurrency: 2,
       enabled: true,
     });
   });

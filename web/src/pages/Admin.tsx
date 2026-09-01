@@ -52,7 +52,7 @@ export default function Admin() {
 // ---- 渠道 ----
 
 export function newChannelDraft(): Partial<Channel> {
-  return { type: "openai-compat", editMode: "auto", timeoutMs: 120000, enabled: true };
+  return { type: "openai-compat", editMode: "auto", timeoutMs: 120000, concurrency: 2, enabled: true };
 }
 
 export function changeChannelType(draft: Partial<Channel>, type: Channel["type"]): Partial<Channel> {
@@ -229,6 +229,15 @@ function ChannelsTab() {
             value={editing.timeoutMs ?? 120000}
             onChange={(e) => setEditing({ ...editing, timeoutMs: Number(e.target.value) })}
           />
+          <label htmlFor="ch-concurrency">并发数</label>
+          <input
+            id="ch-concurrency"
+            type="number"
+            min={1}
+            step={1}
+            value={editing.concurrency ?? 2}
+            onChange={(e) => setEditing({ ...editing, concurrency: Number(e.target.value) })}
+          />
           {editing.type === "ai-horde" ? (
             <p className="muted">
               AI Horde 是排队式异步服务，生成速度取决于在线 worker；图片编辑能力也取决于所选模型和 worker。可填写注册 key，匿名调用请使用 0000000000。
@@ -277,6 +286,7 @@ function ChannelsTab() {
               </span>
             )}
             <span className="pill">{c.type === "ai-horde" ? "AI Horde" : "OpenAI Compatible"}</span>
+            <span className="pill">并发 {c.concurrency}</span>
             <span className={`pill ${c.enabled ? "" : "off"}`}>{c.enabled ? "启用" : "停用"}</span>
             <span className="muted mono">{c.baseUrl}</span>
             <span className="spacer" />
