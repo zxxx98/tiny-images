@@ -152,7 +152,6 @@ export interface ModelHealth {
   model: string;
   status: ModelHealthStatus;
   supportsImageToImage: boolean;
-  supportsNsfw: boolean;
   routes: {
     total: number;
     available: number;
@@ -184,6 +183,7 @@ export interface ModelMapping {
   enabled: boolean;
   priority: number;
   supportsImageToImage: boolean;
+  supportsNsfw: boolean;
   createdAt: number;
   channelName?: string | null;
 }
