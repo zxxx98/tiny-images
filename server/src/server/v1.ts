@@ -2,6 +2,7 @@ import type { AppContext } from "../app.js";
 import { registerGenerations } from "./generations.js";
 import { registerEdits } from "./edits.js";
 import { registerHistory } from "./history.js";
+import { buildModelHealth } from "./modelHealth.js";
 
 export function registerV1(ctx: AppContext): void {
   ctx.app.get("/v1/models", { preHandler: ctx.requireApiKey }, async (req) => {
@@ -20,6 +21,10 @@ export function registerV1(ctx: AppContext): void {
         ...(m.supportsImageToImage ? { supportsImageToImage: true } : {}),
       })),
     };
+  });
+  ctx.app.get("/v1/model-health", { preHandler: ctx.requireUser }, async (req) => {
+    const allowed = ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null);
+    return buildModelHealth(ctx.deps.repo, ctx.deps.router, allowed);
   });
   registerGenerations(ctx);
   registerEdits(ctx);

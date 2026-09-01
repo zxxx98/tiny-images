@@ -998,6 +998,214 @@ details textarea {
   box-shadow: var(--bevel-out-shadow);
 }
 
+/* ---- 模型网络探针 ---- */
+.status-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.status-heading {
+  gap: 12px;
+}
+
+.status-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.status-toolbar > div {
+  min-width: 0;
+}
+
+.status-toolbar p {
+  margin: 0 0 4px;
+}
+
+.status-intro {
+  font-weight: 700;
+}
+
+.status-note {
+  font-size: 12px;
+}
+
+.status-updated {
+  margin-top: 8px !important;
+}
+
+.status-overview {
+  margin: 0;
+}
+
+.status-overview .status-healthy,
+.status-badge.status-healthy {
+  background: #00aa00;
+  color: #ffffff;
+  border-color: #00ff00 #006600 #006600 #00ff00;
+}
+
+.status-overview .status-degraded,
+.status-badge.status-degraded {
+  background: var(--lemon);
+  color: #000000;
+  border-color: #ffffff #808000 #808000 #ffffff;
+}
+
+.status-overview .status-unavailable,
+.status-badge.status-unavailable {
+  background: var(--hot);
+  color: #ffffff;
+  border-color: #ff7777 #800000 #800000 #ff7777;
+}
+
+.status-overview .status-unknown,
+.status-badge.status-unknown {
+  background: #808080;
+  color: #ffffff;
+  border-color: #dfdfdf #404040 #404040 #dfdfdf;
+}
+
+.status-message p {
+  margin: 2px 0;
+}
+
+.model-probe-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.model-probe {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg);
+  border: 2px solid;
+  border-color: var(--bevel-out-border);
+  box-shadow: var(--bevel-out-shadow);
+  border-left-width: 8px;
+}
+
+.model-probe.status-healthy { border-left-color: #008000; }
+.model-probe.status-degraded { border-left-color: #b09000; }
+.model-probe.status-unavailable { border-left-color: #c00000; }
+.model-probe.status-unknown { border-left-color: #686868; }
+
+.model-probe-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.model-probe-head h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 2px solid;
+  box-shadow: var(--bevel-out-shadow);
+}
+
+.model-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.model-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  background: #808080;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.model-metrics > div {
+  min-width: 0;
+  padding: 6px 8px;
+  background: #ffffff;
+}
+
+.model-metrics > div:nth-child(4) {
+  grid-column: span 2;
+}
+
+.model-metrics dt {
+  color: #404040;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.model-metrics dd {
+  margin: 1px 0 0;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.probe-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.probe-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.probe-strip {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(20px, 1fr));
+  gap: 4px;
+  padding: 6px;
+  background: #000000;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.probe-cell {
+  min-width: 0;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  border: 1px solid #ffffff;
+}
+
+.probe-cell.success { background: #008000; }
+.probe-cell.failure { background: #c00000; }
+.probe-cell.empty {
+  background: #505050;
+  color: #dfdfdf;
+}
+
+.probe-key {
+  font-size: 11px;
+}
+
 /* ---- 页脚 ---- */
 .app-footer {
   padding: 10px 16px 16px;
@@ -1026,6 +1234,40 @@ details textarea {
 
   .error-cell {
     max-width: 180px;
+  }
+
+  .model-probe-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .status-toolbar {
+    flex-direction: column;
+  }
+
+  .status-toolbar .btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .model-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .model-metrics > div:nth-child(4) {
+    grid-column: auto;
+  }
+
+  .probe-strip {
+    gap: 2px;
+    padding: 4px;
+    grid-template-columns: repeat(10, minmax(14px, 1fr));
+  }
+
+  .probe-cell {
+    height: 20px;
+    font-size: 11px;
   }
 }
 

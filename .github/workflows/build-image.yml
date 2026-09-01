@@ -3,6 +3,8 @@ name: build-image
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 # 同一分支只保留最新一次运行，取消旧的
 concurrency:
@@ -32,12 +34,15 @@ jobs:
           npm run build -w server
           npm test -w server
 
-      - name: 构建 web
-        run: npm run build -w web
+      - name: 类型检查与测试（web）
+        run: |
+          npm run build -w web
+          npm test -w web
 
       # 产物打包：测试通过后重装纯生产依赖（server 生产依赖均为纯 JS，双架构通用），
       # 镜像只做 COPY，多架构构建无需 QEMU
       - name: 准备镜像产物（ci-dist）
+        if: github.event_name == 'push'
         run: |
           npm ci --omit=dev -w server
           mkdir -p ci-dist/server-dist ci-dist/web-dist ci-dist/server ci-dist/server/node_modules
@@ -53,12 +58,14 @@ jobs:
           tar -czf ci-dist.tgz -C ci-dist .
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
         with:
           name: ci-dist
           path: ci-dist.tgz
           retention-days: 3
 
   docker:
+    if: github.event_name == 'push'
     needs: test-and-build
     runs-on: ubuntu-latest
     steps:

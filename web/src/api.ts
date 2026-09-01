@@ -139,6 +139,41 @@ export interface ChannelHealth {
 
 export const fetchChannelHealth = (): Promise<ChannelHealth[]> => api<ChannelHealth[]>("/admin/channel-health");
 
+export type ModelHealthStatus = "healthy" | "degraded" | "unavailable" | "unknown";
+
+export interface ModelHealthSample {
+  ts: number;
+  status: "ok" | "error";
+  latencyMs: number | null;
+}
+
+export interface ModelHealth {
+  model: string;
+  status: ModelHealthStatus;
+  supportsImageToImage: boolean;
+  routes: {
+    total: number;
+    available: number;
+  };
+  requests: {
+    sampleSize: number;
+    successful: number;
+    failed: number;
+    successRate: number | null;
+    averageLatencyMs: number | null;
+    lastRequestAt: number | null;
+  };
+  recent: ModelHealthSample[];
+}
+
+export interface ModelHealthResponse {
+  generatedAt: number;
+  sampleLimit: number;
+  models: ModelHealth[];
+}
+
+export const fetchModelHealth = (): Promise<ModelHealthResponse> => api<ModelHealthResponse>("/v1/model-health");
+
 export interface ModelMapping {
   id: number;
   publicName: string;

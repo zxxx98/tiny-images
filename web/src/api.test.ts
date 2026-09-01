@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, fetchAnnouncement, fetchChannelHealth, fetchSettings, saveSettings } from "./api";
+import { createEditJob, fetchAnnouncement, fetchChannelHealth, fetchModelHealth, fetchSettings, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -14,6 +14,38 @@ describe("channel health API", () => {
     expect(fetchMock).toHaveBeenCalledWith("/admin/channel-health", expect.objectContaining({ method: "GET" }));
   });
 });
+describe("model health API", () => {
+  it("fetches model health with the current JWT", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const payload = { generatedAt: 123, sampleLimit: 50, models: [] };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchModelHealth()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/model-health",
+      expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
+    );
+  });
+
+  it("surfaces model health errors", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "health unavailable" } }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(fetchModelHealth()).rejects.toThrow("health unavailable");
+  });
+});
+
 describe("createEditJob", () => {
   it("posts multipart data to the detached edit-job endpoint", async () => {
     vi.stubGlobal("localStorage", { getItem: () => "web-token" });

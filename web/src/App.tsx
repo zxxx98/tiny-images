@@ -7,6 +7,7 @@ import History from "./pages/History";
 import Login from "./pages/Login";
 import Playground from "./pages/Playground";
 import Setup from "./pages/Setup";
+import Status from "./pages/Status";
 
 function RequireToken({ children, setupNeeded }: { children: React.ReactElement; setupNeeded: boolean }) {
   if (!getToken()) return <Navigate to={setupNeeded ? "/setup" : "/login"} replace />;
@@ -44,6 +45,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 const TITLES: Record<string, string> = {
   "/": "Playground",
+  "/status": "模型状态",
   "/history": "历史",
   "/admin": "管理后台",
   "/guide": "API 指南",
@@ -135,6 +137,9 @@ export default function App() {
           <NavLink to="/" end className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
             Playground
           </NavLink>
+          <NavLink to="/status" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
+            模型状态
+          </NavLink>
           <NavLink to="/guide" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
             API 指南 <span className="badge-new">NEW!</span>
           </NavLink>
@@ -176,6 +181,14 @@ export default function App() {
               element={
                 <RequireToken setupNeeded={setupNeeded}>
                   <Playground />
+                </RequireToken>
+              }
+            />
+            <Route
+              path="/status"
+              element={
+                <RequireToken setupNeeded={setupNeeded}>
+                  <Status />
                 </RequireToken>
               }
             />
