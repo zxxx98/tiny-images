@@ -60,12 +60,13 @@ describe("users", () => {
     const u = repo.createUser({ email: "A@x.com", passwordHash: "aa:bb", role: "user", quotaTotal: 100 });
     expect(u.email).toBe("a@x.com"); // 统一小写
     expect(u.quotaUsed).toBe(0);
+    expect(u.allowNsfw).toBe(false);
     expect(() => repo.createUser({ email: "a@x.com", passwordHash: "c", role: "user", quotaTotal: 1 })).toThrow(ConflictError);
     expect(repo.getUserByEmail("A@X.com")?.id).toBe(u.id);
     expect(repo.listUsers()).toHaveLength(1);
 
-    const patched = repo.updateUser(u.id, { quotaTotal: 50, enabled: false, passwordHash: "cc:dd" });
-    expect(patched).toMatchObject({ quotaTotal: 50, enabled: false, passwordHash: "cc:dd" });
+    const patched = repo.updateUser(u.id, { quotaTotal: 50, enabled: false, passwordHash: "cc:dd", allowNsfw: true });
+    expect(patched).toMatchObject({ quotaTotal: 50, enabled: false, passwordHash: "cc:dd", allowNsfw: true });
     expect(repo.updateUser(999, { enabled: true })).toBeNull();
 
     expect(repo.deleteUser(u.id)).toBe(true);
@@ -93,6 +94,14 @@ describe("users", () => {
     // 组被删 → 成员关系级联，组集合变小
     repo.deleteGroup(g2.id);
     expect(repo.allowedChannelIds(u.id)).toEqual([c1.id]);
+  });
+
+  it("builds a default-deny NSFW model access policy", () => {
+    const denied = repo.createUser({ email: "denied@x.com", passwordHash: "a:b", role: "user", quotaTotal: 10 });
+    const allowed = repo.createUser({ email: "allowed@x.com", passwordHash: "a:b", role: "user", quotaTotal: 10, allowNsfw: true });
+    expect(repo.modelAccessPolicy(null)).toEqual({ allowedChannelIds: null, allowNsfw: false });
+    expect(repo.modelAccessPolicy(denied.id)).toEqual({ allowedChannelIds: null, allowNsfw: false });
+    expect(repo.modelAccessPolicy(allowed.id)).toEqual({ allowedChannelIds: null, allowNsfw: true });
   });
 
   it("chargeQuota conditional + null quota unlimited", () => {

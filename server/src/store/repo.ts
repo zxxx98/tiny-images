@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { ChannelType, EditMode } from "../core/types.js";
+import type { ChannelType, EditMode, ModelAccessPolicy } from "../core/types.js";
 
 export interface ChannelRow {
   id: number;
@@ -31,6 +31,7 @@ export interface ModelRow {
   enabled: boolean;
   priority: number;
   supportsImageToImage: boolean;
+  supportsNsfw: boolean;
   createdAt: number;
 }
 
@@ -101,6 +102,7 @@ export interface UserRow {
   quotaTotal: number | null;
   quotaUsed: number;
   quotaDay: string | null;
+  allowNsfw: boolean;
   groupIds: number[];
 }
 
@@ -326,12 +328,14 @@ export class Repo {
     enabled?: boolean;
     priority?: number;
     supportsImageToImage?: boolean;
+    supportsNsfw?: boolean;
   }): ModelRow {
     const enabled = input.enabled !== false;
     const supportsImageToImage = input.supportsImageToImage === true;
+    const supportsNsfw = input.supportsNsfw === true;
     const res = this.db
       .prepare(
-        "INSERT INTO models (public_name, channel_id, upstream_name, enabled, priority, supports_image_to_image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO models (public_name, channel_id, upstream_name, enabled, priority, supports_image_to_image, supports_nsfw, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         input.publicName,
@@ -340,6 +344,7 @@ export class Repo {
         enabled ? 1 : 0,
         input.priority ?? 0,
         supportsImageToImage ? 1 : 0,
+        supportsNsfw ? 1 : 0,
         Date.now(),
       );
     return this.getModel(Number(res.lastInsertRowid))!;
@@ -382,6 +387,7 @@ export class Repo {
       enabled?: boolean;
       priority?: number;
       supportsImageToImage?: boolean;
+      supportsNsfw?: boolean;
     },
   ): ModelRow | null {
     const existing = this.getModel(id);
@@ -389,7 +395,7 @@ export class Repo {
     const merged = { ...existing, ...patch };
     this.db
       .prepare(
-        "UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ?, priority = ?, supports_image_to_image = ? WHERE id = ?",
+        "UPDATE models SET public_name = ?, channel_id = ?, upstream_name = ?, enabled = ?, priority = ?, supports_image_to_image = ?, supports_nsfw = ? WHERE id = ?",
       )
       .run(
         merged.publicName,
@@ -398,6 +404,7 @@ export class Repo {
         merged.enabled ? 1 : 0,
         merged.priority,
         merged.supportsImageToImage ? 1 : 0,
+        merged.supportsNsfw ? 1 : 0,
         id,
       );
     return this.getModel(id);
@@ -417,6 +424,7 @@ export class Repo {
       enabled: Number(row.enabled) === 1,
       priority: row.priority === undefined ? 0 : Number(row.priority),
       supportsImageToImage: Number(row.supports_image_to_image) === 1,
+      supportsNsfw: Number(row.supports_nsfw) === 1,
       createdAt: Number(row.created_at),
     };
   }
@@ -688,16 +696,17 @@ export class Repo {
       quotaTotal: row.quota_total === null || row.quota_total === undefined ? null : Number(row.quota_total),
       quotaUsed: Number(row.quota_used),
       quotaDay: row.quota_day === null || row.quota_day === undefined ? null : String(row.quota_day),
+      allowNsfw: Number(row.allow_nsfw) === 1,
       groupIds: groupIds.map((g) => Number(g.group_id)),
     };
   }
 
-  createUser(input: { email: string; passwordHash: string; role: "admin" | "user"; quotaTotal: number | null }): UserRow {
+  createUser(input: { email: string; passwordHash: string; role: "admin" | "user"; quotaTotal: number | null; allowNsfw?: boolean }): UserRow {
     const email = input.email.toLowerCase();
     try {
       const res = this.db
-        .prepare("INSERT INTO users (email, password_hash, role, enabled, quota_total, quota_used, quota_day, created_at) VALUES (?, ?, ?, 1, ?, 0, ?, ?)")
-        .run(email, input.passwordHash, input.role, input.quotaTotal, this.currentQuotaDay(), Date.now());
+        .prepare("INSERT INTO users (email, password_hash, role, enabled, quota_total, quota_used, quota_day, allow_nsfw, created_at) VALUES (?, ?, ?, 1, ?, 0, ?, ?, ?)")
+        .run(email, input.passwordHash, input.role, input.quotaTotal, this.currentQuotaDay(), input.allowNsfw === true ? 1 : 0, Date.now());
       return this.getUser(Number(res.lastInsertRowid))!;
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`user '${email}' already exists`);
@@ -722,13 +731,14 @@ export class Repo {
     return rows.map((r) => this.toUser(r));
   }
 
-  updateUser(id: number, patch: { enabled?: boolean; quotaTotal?: number | null; passwordHash?: string }): UserRow | null {
+  updateUser(id: number, patch: { enabled?: boolean; quotaTotal?: number | null; passwordHash?: string; allowNsfw?: boolean }): UserRow | null {
     const existing = this.getUser(id);
     if (!existing) return null;
     const enabled = patch.enabled ?? existing.enabled;
     const quotaTotal = patch.quotaTotal !== undefined ? patch.quotaTotal : existing.quotaTotal;
     const passwordHash = patch.passwordHash ?? existing.passwordHash;
-    this.db.prepare("UPDATE users SET enabled = ?, quota_total = ?, password_hash = ? WHERE id = ?").run(enabled ? 1 : 0, quotaTotal, passwordHash, id);
+    const allowNsfw = patch.allowNsfw ?? existing.allowNsfw;
+    this.db.prepare("UPDATE users SET enabled = ?, quota_total = ?, password_hash = ?, allow_nsfw = ? WHERE id = ?").run(enabled ? 1 : 0, quotaTotal, passwordHash, allowNsfw ? 1 : 0, id);
     return this.getUser(id);
   }
 
@@ -753,6 +763,13 @@ export class Repo {
       .all(userId) as Record<string, unknown>[];
     if (rows.length === 0) return null; // 未配置分组 = 不限
     return rows.map((r) => Number(r.channel_id));
+  }
+
+  modelAccessPolicy(userId: number | null): ModelAccessPolicy {
+    return {
+      allowedChannelIds: this.allowedChannelIds(userId),
+      allowNsfw: userId === null ? false : this.getUser(userId)?.allowNsfw === true,
+    };
   }
 
   chargeQuota(userId: number, n: number): boolean {

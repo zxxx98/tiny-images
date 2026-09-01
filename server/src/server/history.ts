@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AppContext } from "../app.js";
 import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest } from "../core/types.js";
+import type { ModelAccessPolicy } from "../core/types.js";
 import { localizeImage } from "../media/b64cache.js";
 import type { GenerationRow } from "../store/repo.js";
 import { parseEditMultipart } from "./edits.js";
@@ -72,14 +73,14 @@ async function runJob(
   genReq: UnifiedGenRequest,
   apiKeyId: number | null,
   generationId: number,
-  routeOpts: { callerUserId: number | null; allowedChannelIds: number[] | null },
+  routeOpts: { callerUserId: number | null; modelAccess: ModelAccessPolicy },
 ): Promise<void> {
   const started = Date.now();
   try {
     const r = await ctx.deps.executor.generate(model, genReq, {
       callerApiKeyId: apiKeyId,
       callerUserId: routeOpts.callerUserId,
-      allowedChannelIds: routeOpts.allowedChannelIds,
+      modelAccess: routeOpts.modelAccess,
     });
     const images: JobImage[] = [];
     for (const img of r.result.images) {
@@ -117,14 +118,14 @@ async function runEditJob(
   editReq: UnifiedEditRequest,
   apiKeyId: number | null,
   generationId: number,
-  routeOpts: { callerUserId: number | null; allowedChannelIds: number[] | null },
+  routeOpts: { callerUserId: number | null; modelAccess: ModelAccessPolicy },
 ): Promise<void> {
   const started = Date.now();
   try {
     const r = await ctx.deps.executor.edit(model, editReq, {
       callerApiKeyId: apiKeyId,
       callerUserId: routeOpts.callerUserId,
-      allowedChannelIds: routeOpts.allowedChannelIds,
+      modelAccess: routeOpts.modelAccess,
     });
     const images: JobImage[] = [];
     if (r.result.images.length === 0) throw new Error("edit job returned no images to localize");
@@ -181,7 +182,7 @@ export function registerHistory(ctx: AppContext): void {
     const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: genReq.prompt, kind: "generate" });
     void runJob(ctx, ctx.deps.jobManager, job.id, model, genReq, apiKeyId, generationId, {
       callerUserId: req.callerUserId ?? null,
-      allowedChannelIds: ctx.deps.repo.allowedChannelIds(req.callerUserId ?? null),
+      modelAccess: ctx.deps.repo.modelAccessPolicy(req.callerUserId ?? null),
     });
     return (reply as FastifyReply).code(200).send({ jobId: job.id });
   });
@@ -206,7 +207,7 @@ export function registerHistory(ctx: AppContext): void {
     const job = ctx.deps.jobManager.create({ apiKeyId, userId, generationId, model, prompt: editReq.prompt, kind: "edit" });
     void runEditJob(ctx, job.id, model, editReq, apiKeyId, generationId, {
       callerUserId: userId,
-      allowedChannelIds: ctx.deps.repo.allowedChannelIds(userId),
+      modelAccess: ctx.deps.repo.modelAccessPolicy(userId),
     });
     return (reply as FastifyReply).code(200).send({ jobId: job.id });
   });

@@ -20,6 +20,12 @@ export interface ModelMapping {
   upstreamName: string;
   enabled: boolean;
   supportsImageToImage: boolean;
+  supportsNsfw: boolean;
+}
+
+export interface ModelAccessPolicy {
+  allowedChannelIds: number[] | null;
+  allowNsfw: boolean;
 }
 
 export interface AIHordeOptions {

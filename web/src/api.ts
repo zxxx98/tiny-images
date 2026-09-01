@@ -183,6 +183,7 @@ export interface ModelMapping {
   enabled: boolean;
   priority: number;
   supportsImageToImage: boolean;
+  supportsNsfw: boolean;
   createdAt: number;
   channelName?: string | null;
 }
@@ -215,6 +216,7 @@ export interface UserView {
   quotaUsed: number;
   quotaRemaining: number | null;
   groupIds: number[];
+  allowNsfw: boolean;
 }
 
 export interface LogRow {

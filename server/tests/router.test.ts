@@ -14,6 +14,16 @@ beforeEach(() => {
 });
 
 describe("ModelRouter", () => {
+  it("filters NSFW routes unless the caller is explicitly allowed", () => {
+    const safeChannel = repo.createChannel({ name: "safe", baseUrl: "https://safe.test/v1" });
+    const adultChannel = repo.createChannel({ name: "adult", baseUrl: "https://adult.test/v1" });
+    const safe = repo.createModel({ publicName: "img", channelId: safeChannel.id, priority: 10 });
+    const adult = repo.createModel({ publicName: "img", channelId: adultChannel.id, priority: 0, supportsNsfw: true });
+
+    expect(router.resolve("img", { allowedChannelIds: null, allowNsfw: false })?.model.id).toBe(safe.id);
+    expect(router.resolve("img", { allowedChannelIds: null, allowNsfw: true })?.model.id).toBe(adult.id);
+    expect(router.resolve("img", { allowedChannelIds: [adultChannel.id], allowNsfw: false })).toBeNull();
+  });
   it("resolves enabled model on enabled channel", () => {
     const c = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
     repo.createModel({ publicName: "img", channelId: c.id, upstreamName: "up-1" });
@@ -53,8 +63,8 @@ describe("ModelRouter failover + circuit breaker", () => {
     expect(router.resolve("img")!.model.id).toBe(backup.id);
     repo.updateChannel(c1.id, { enabled: true });
     // 用户渠道组不包含主渠道 → 走备选
-    expect(router.resolve("img", [c2.id])!.model.id).toBe(backup.id);
-    expect(router.resolve("img", [999])).toBeNull();
+    expect(router.resolve("img", { allowedChannelIds: [c2.id], allowNsfw: false })!.model.id).toBe(backup.id);
+    expect(router.resolve("img", { allowedChannelIds: [999], allowNsfw: false })).toBeNull();
   });
 
   it("opens circuit after consecutive failures and skips channel until cooldown", () => {

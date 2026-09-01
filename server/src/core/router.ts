@@ -1,4 +1,13 @@
 import type { ChannelRow, ModelRow, Repo } from "../store/repo.js";
+import type { ModelAccessPolicy } from "./types.js";
+
+const DEFAULT_ACCESS: ModelAccessPolicy = { allowedChannelIds: null, allowNsfw: false };
+
+export function modelAllowedByPolicy(model: ModelRow, policy: ModelAccessPolicy): boolean {
+  const channelAllowed = policy.allowedChannelIds === null
+    || (policy.allowedChannelIds.length > 0 && policy.allowedChannelIds.includes(model.channelId));
+  return channelAllowed && (policy.allowNsfw || !model.supportsNsfw);
+}
 
 export interface ResolvedRoute {
   model: ModelRow;
@@ -32,10 +41,9 @@ export class ModelRouter {
     private readonly opts: RouterOptions = {},
   ) {}
 
-  resolve(publicName: string, allowedChannelIds?: number[] | null): ResolvedRoute | null {
+  resolve(publicName: string, policy: ModelAccessPolicy = DEFAULT_ACCESS): ResolvedRoute | null {
     const candidates = this.repo.listEnabledModelRoutes(publicName);
     if (candidates.length === 0) return null;
-    const allowed = (m: ModelRow): boolean => !allowedChannelIds || (allowedChannelIds.length > 0 && allowedChannelIds.includes(m.channelId));
     const groups = new Map<number, ModelRow[]>();
     for (const model of candidates) {
       const group = groups.get(model.priority) ?? [];
@@ -45,7 +53,7 @@ export class ModelRouter {
 
     const pickGroup = (priority: number, models: ModelRow[], respectCooldown: boolean): ResolvedRoute | null => {
       const valid = models.filter((model) => {
-        if (!allowed(model)) return false;
+        if (!modelAllowedByPolicy(model, policy)) return false;
         if (respectCooldown && this.isCoolingDown(model.channelId)) return false;
         const channel = this.repo.getChannel(model.channelId);
         return !!channel?.enabled;

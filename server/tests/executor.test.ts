@@ -12,6 +12,10 @@ import { Repo } from "../src/store/repo.js";
 
 const gen = (): UnifiedGenRequest => ({ prompt: "p", n: 1, responseFormat: "b64_json", passthrough: {} });
 const ok: UnifiedImageResult = { created: 1, images: [{ b64: "AA" }] };
+const caller = (callerApiKeyId: number | null) => ({
+  callerApiKeyId,
+  modelAccess: { allowedChannelIds: null, allowNsfw: false },
+});
 
 function fakeProvider(scripts: Array<(ctx: CallContext) => Promise<UnifiedImageResult>>): ImageProvider {
   let i = 0;
@@ -60,9 +64,9 @@ describe("Executor", () => {
     ]);
     const ex = build(provider);
     const calls = [
-      ex.generate("img", gen(), { callerApiKeyId: null }),
-      ex.generate("img", gen(), { callerApiKeyId: null }),
-      ex.generate("img", gen(), { callerApiKeyId: null }),
+      ex.generate("img", gen(), caller(null)),
+      ex.generate("img", gen(), caller(null)),
+      ex.generate("img", gen(), caller(null)),
     ];
 
     await vi.waitFor(() => expect(entered).toBe(2));
@@ -83,7 +87,7 @@ describe("Executor", () => {
     const providers = new Map<string, ImageProvider>([["openai-compat", openai], ["ai-horde", horde]]);
     const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
 
-    await ex.generate("img", gen(), { callerApiKeyId: null });
+    await ex.generate("img", gen(), caller(null));
 
     expect(hordeCalls).toBe(1);
     expect(openaiCalls).toBe(0);
@@ -95,7 +99,7 @@ describe("Executor", () => {
     const providers = new Map<string, ImageProvider>([["openai-compat", openai]]);
     const ex = new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers, repo } as never);
 
-    await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({
+    await expect(ex.generate("img", gen(), caller(null))).rejects.toMatchObject({
       httpStatus: 500,
       type: "configuration_error",
     });
@@ -111,7 +115,7 @@ describe("Executor", () => {
         },
       ]),
     );
-    const r = await ex.generate("img", gen(), { callerApiKeyId: 7 });
+    const r = await ex.generate("img", gen(), caller(7));
     expect(r.channel.name).toBe("a");
     expect(r.result.images).toEqual([{ b64: "AA" }]);
     expect(r.latencyMs).toBeGreaterThanOrEqual(0);
@@ -129,7 +133,7 @@ describe("Executor", () => {
         },
       ]),
     );
-    const r = await ex.generate("img", gen(), { callerApiKeyId: null });
+    const r = await ex.generate("img", gen(), caller(null));
     expect(r.result.images).toEqual([{ b64: "AA" }]);
     expect(repo.listKeys(channelId).find((k) => k.apiKey === "sk-1")!.cooldownUntil).toBeGreaterThan(Date.now());
   });
@@ -142,7 +146,7 @@ describe("Executor", () => {
         },
       ]),
     );
-    await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({ httpStatus: 429 });
+    await expect(ex.generate("img", gen(), caller(null))).rejects.toMatchObject({ httpStatus: 429 });
     const logs = repo.recentLogs(10);
     expect(logs[0]).toMatchObject({ status: "error", httpStatus: 429 });
     expect(logs[0].errorMessage).toContain("slow down");
@@ -158,7 +162,7 @@ describe("Executor", () => {
         },
       ]),
     );
-    await expect(ex.generate("img", gen(), { callerApiKeyId: null })).rejects.toMatchObject({ httpStatus: 400 });
+    await expect(ex.generate("img", gen(), caller(null))).rejects.toMatchObject({ httpStatus: 400 });
     expect(calls).toBe(1);
   });
 
@@ -189,7 +193,7 @@ describe("Executor", () => {
       },
     };
 
-    const response = await build(provider).generate("img", request, { callerApiKeyId: null });
+    const response = await build(provider).generate("img", request, caller(null));
 
     expect(upstreamPrompt).toBe("  shared style  \np");
     expect(request.prompt).toBe("p");
@@ -211,7 +215,7 @@ describe("Executor", () => {
       },
     ]);
 
-    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((value: unknown) => value);
+    const error = await build(provider).generate("img", gen(), caller(null)).catch((value: unknown) => value);
 
     expect(calls).toBe(1);
     expect(error).toMatchObject({ httpStatus: 429, keyRetrySafe: false });
@@ -242,7 +246,7 @@ describe("Executor", () => {
       },
     };
 
-    await build(provider).edit("img", request, { callerApiKeyId: null });
+    await build(provider).edit("img", request, caller(null));
 
     expect(upstreamRequest?.prompt).toBe("edit policy\nmake it blue");
     expect(upstreamRequest?.images).toBe(request.images);
@@ -266,7 +270,7 @@ describe("Executor", () => {
       },
     };
 
-    await build(provider).generate("img", gen(), { callerApiKeyId: null });
+    await build(provider).generate("img", gen(), caller(null));
 
     expect(upstreamPrompt).toBe("p");
   });
@@ -286,7 +290,7 @@ describe("Executor", () => {
       },
     };
 
-    const error = await build(provider).generate("img", gen(), { callerApiKeyId: null }).catch((err: unknown) => err);
+    const error = await build(provider).generate("img", gen(), caller(null)).catch((err: unknown) => err);
 
     expect(error).toMatchObject({ httpStatus: 400, type: "invalid_request_error", code: "bad_prompt" });
     expect((error as Error).message).not.toContain("secret policy");
@@ -294,7 +298,7 @@ describe("Executor", () => {
   });
 
   it("throws ModelNotFoundError for unknown model", async () => {
-    await expect(build(fakeProvider([])).generate("nope", gen(), { callerApiKeyId: null })).rejects.toMatchObject({
+    await expect(build(fakeProvider([])).generate("nope", gen(), caller(null))).rejects.toMatchObject({
       name: "ModelNotFoundError",
     });
     expect(repo.recentLogs(10)).toHaveLength(0);

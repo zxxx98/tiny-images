@@ -47,6 +47,14 @@ describe("channels", () => {
 });
 
 describe("models", () => {
+  it("stores NSFW capability with a secure default", () => {
+    const c = repo.createChannel({ name: "nsfw", baseUrl: "https://x/v1" });
+    const safe = repo.createModel({ publicName: "safe", channelId: c.id });
+    const adult = repo.createModel({ publicName: "adult", channelId: c.id, supportsNsfw: true });
+    expect(safe.supportsNsfw).toBe(false);
+    expect(adult.supportsNsfw).toBe(true);
+    expect(repo.updateModel(safe.id, { supportsNsfw: true })?.supportsNsfw).toBe(true);
+  });
   it("allows duplicate enabled public_name (failover routes ordered by priority)", () => {
     const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
     const c2 = repo.createChannel({ name: "b", baseUrl: "https://y/v1" });

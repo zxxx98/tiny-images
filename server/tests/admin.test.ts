@@ -185,10 +185,11 @@ describe("/admin/models", () => {
       method: "POST",
       url: "/admin/models",
       headers: H,
-      payload: { publicName: "img-1", channelId, upstreamName: "gpt-image-1" },
+      payload: { publicName: "img-1", channelId, upstreamName: "gpt-image-1", supportsNsfw: true },
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().channelId).toBe(channelId);
+    expect(created.json().supportsNsfw).toBe(true);
 
     // 同名映射允许重复（故障转移），可带 priority
     const dup = await app.inject({
@@ -203,8 +204,9 @@ describe("/admin/models", () => {
     const list = await app.inject({ url: "/admin/models", headers: H });
     expect(list.json()[0].channelName).toBe("c1");
 
-    const patched = await app.inject({ method: "PATCH", url: `/admin/models/${created.json().id}`, headers: H, payload: { enabled: false } });
-    expect(patched.json().enabled).toBe(false);
+    const patched = await app.inject({ method: "PATCH", url: `/admin/models/${created.json().id}`, headers: H, payload: { enabled: false, supportsNsfw: false } });
+    expect(patched.json()).toMatchObject({ enabled: false, supportsNsfw: false });
+    expect((await app.inject({ method: "PATCH", url: `/admin/models/${created.json().id}`, headers: H, payload: { supportsNsfw: "yes" } })).statusCode).toBe(400);
 
     const del = await app.inject({ method: "DELETE", url: `/admin/models/${created.json().id}`, headers: H });
     expect(del.statusCode).toBe(204);
