@@ -258,6 +258,8 @@ export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/feature
 export interface JobImage {
   file: string;
   url: string;
+  width?: number;
+  height?: number;
   revisedPrompt?: string;
 }
 

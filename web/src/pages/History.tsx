@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 
 interface HistoryImage {
   file: string;
   url: string;
+  width?: number;
+  height?: number;
   revisedPrompt?: string;
+}
+
+interface ImageDimensions {
+  width: number;
+  height: number;
 }
 
 interface HistoryParams {
@@ -50,7 +57,28 @@ export function historyItemLabel(item: Pick<HistoryItem, "prompt" | "params">): 
   return `图片超分 · ${item.params?.scale === 4 ? "4×" : "2×"}`;
 }
 
-export function historyItemSize(item: Pick<HistoryItem, "params">): string {
+function formatImageSize(dimensions: Partial<ImageDimensions> | undefined): string | null {
+  if (
+    typeof dimensions?.width !== "number" ||
+    !Number.isInteger(dimensions.width) ||
+    dimensions.width <= 0 ||
+    typeof dimensions.height !== "number" ||
+    !Number.isInteger(dimensions.height) ||
+    dimensions.height <= 0
+  ) {
+    return null;
+  }
+  return `${dimensions.width}x${dimensions.height}`;
+}
+
+export function historyItemSize(
+  item: Pick<HistoryItem, "params"> & { images?: Pick<HistoryImage, "width" | "height">[] },
+  loadedDimensions?: ImageDimensions,
+): string {
+  const persistedSize = formatImageSize(item.images?.[0]);
+  if (persistedSize) return persistedSize;
+  const loadedSize = formatImageSize(loadedDimensions);
+  if (loadedSize) return loadedSize;
   const params = item.params;
   const targetWidth = params?.targetWidth;
   const targetHeight = params?.targetHeight;
@@ -65,7 +93,7 @@ export function historyItemSize(item: Pick<HistoryItem, "params">): string {
   ) {
     return `${targetWidth}x${targetHeight}`;
   }
-  return typeof params?.size === "string" && params.size.length > 0 ? params.size : "auto";
+  return typeof params?.size === "string" && params.size.length > 0 && params.size !== "auto" ? params.size : "未知";
 }
 
 export default function History() {
@@ -74,6 +102,7 @@ export default function History() {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<HistoryItem | null>(null);
   const [copied, setCopied] = useState(false);
+  const [loadedImageSizes, setLoadedImageSizes] = useState<Record<string, ImageDimensions>>({});
   const navigate = useNavigate();
 
   const load = useCallback(async (before: number | null) => {
@@ -100,6 +129,18 @@ export default function History() {
     div.textContent = "已过期";
     img.replaceWith(div);
   };
+
+  const rememberImageSize = (key: string, e: SyntheticEvent<HTMLImageElement>): void => {
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    if (!formatImageSize({ width: naturalWidth, height: naturalHeight })) return;
+    setLoadedImageSizes((prev) => {
+      const current = prev[key];
+      if (current?.width === naturalWidth && current.height === naturalHeight) return prev;
+      return { ...prev, [key]: { width: naturalWidth, height: naturalHeight } };
+    });
+  };
+
+  const imageSizeKey = (itemId: number, imageIndex: number): string => `${itemId}:${imageIndex}`;
 
   const rerun = (item: HistoryItem): void => {
     navigate("/", { state: { prompt: item.prompt, model: item.model } });
@@ -149,7 +190,7 @@ export default function History() {
         {items.map((item) => {
           const cover = item.images[0];
           const label = historyItemLabel(item);
-          const size = historyItemSize(item);
+          const size = historyItemSize(item, loadedImageSizes[imageSizeKey(item.id, 0)]);
           return (
             <button
               key={item.id}
@@ -163,7 +204,13 @@ export default function History() {
             >
               <span className="wall-thumb">
                 {cover ? (
-                  <img src={cover.url} alt={label} loading="lazy" onError={markExpired} />
+                  <img
+                    src={cover.url}
+                    alt={label}
+                    loading="lazy"
+                    onLoad={(e) => rememberImageSize(imageSizeKey(item.id, 0), e)}
+                    onError={markExpired}
+                  />
                 ) : (
                   <span className="expired wall-expired">
                     {item.status === "error" ? (isUpscaleHistoryItem(item) ? "超分失败" : "生成失败") : item.status === "pending" ? (isUpscaleHistoryItem(item) ? "超分中…" : "生成中…") : "已过期"}
@@ -196,7 +243,13 @@ export default function History() {
               <div className="detail-gallery">
                 {detail.images.map((img, i) => (
                   <figure key={i} className="shot">
-                    <img src={img.url} alt={`历史图片 ${i + 1}`} loading="lazy" onError={markExpired} />
+                    <img
+                      src={img.url}
+                      alt={`历史图片 ${i + 1}`}
+                      loading="lazy"
+                      onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
+                      onError={markExpired}
+                    />
                     <div className="shot-actions">
                       <button className="btn small" onClick={() => editImage(img.url)}>
                         编辑此图
@@ -217,7 +270,7 @@ export default function History() {
                 <div className="history-meta">
                   <span className="pill">{fmtTime(detail.createdAt)}</span>
                   <span className="pill">{historyItemLabel(detail)}</span>
-                  <span className="pill">尺寸: {historyItemSize(detail)}</span>
+                  <span className="pill">尺寸: {historyItemSize(detail, loadedImageSizes[imageSizeKey(detail.id, 0)])}</span>
                   {!isUpscaleHistoryItem(detail) && <span className="pill">{detail.model}</span>}
                   <span className={`pill ${detail.status === "ok" ? "" : detail.status === "error" ? "error" : "off"}`}>
                     {statusLabel(detail)}

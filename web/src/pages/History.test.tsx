@@ -159,7 +159,7 @@ describe("history upscale rows", () => {
 
     expect(container.textContent).toContain("尺寸: 1024x1536");
     expect(container.textContent).toContain("尺寸: 2048x1536");
-    expect(container.textContent).toContain("尺寸: auto");
+    expect(container.textContent).toContain("尺寸: 未知");
 
     const normalTiles = Array.from(container.querySelectorAll('.wall-tile[title="a cat"]')) as HTMLButtonElement[];
     const upscaleTile = container.querySelector('.wall-tile[title="图片超分 · 2×"]') as HTMLButtonElement;
@@ -173,7 +173,7 @@ describe("history upscale rows", () => {
 
     await act(async () => (container.querySelector(".detail-overlay") as HTMLDivElement).click());
     await act(async () => normalTiles[1].click());
-    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: auto");
+    expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 未知");
   });
 
   it("prefers persisted image dimensions when the request size is auto", async () => {
