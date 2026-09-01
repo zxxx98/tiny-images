@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Executor } from "../src/core/executor.js";
 import { KeyPool } from "../src/core/keyPool.js";
 import { ModelRouter } from "../src/core/router.js";
@@ -42,6 +42,38 @@ const build = (provider: ImageProvider) =>
   new Executor({ router: new ModelRouter(repo), keyPool: new KeyPool(repo), providers: new Map([["openai-compat", provider]]), repo });
 
 describe("Executor", () => {
+  it("limits concurrent provider calls for the same channel", async () => {
+    repo.updateChannel(channelId, { concurrency: 2 });
+    const releases: Array<() => void> = [];
+    let entered = 0;
+    let active = 0;
+    let maximumActive = 0;
+    const provider = fakeProvider([
+      async () => {
+        entered++;
+        active++;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        active--;
+        return ok;
+      },
+    ]);
+    const ex = build(provider);
+    const calls = [
+      ex.generate("img", gen(), { callerApiKeyId: null }),
+      ex.generate("img", gen(), { callerApiKeyId: null }),
+      ex.generate("img", gen(), { callerApiKeyId: null }),
+    ];
+
+    await vi.waitFor(() => expect(entered).toBe(2));
+    expect(maximumActive).toBe(2);
+    releases.shift()?.();
+    await vi.waitFor(() => expect(entered).toBe(3));
+    for (const release of releases) release();
+    await Promise.all(calls);
+    expect(maximumActive).toBe(2);
+  });
+
   it("selects the provider from channel.type", async () => {
     repo.updateChannel(channelId, { type: "ai-horde" });
     let openaiCalls = 0;

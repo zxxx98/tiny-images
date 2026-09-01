@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import type { ChannelRow, Repo } from "../store/repo.js";
 import { providerFor, type ProviderRegistry } from "../providers/registry.js";
+import { AdaptiveConcurrencyLimiter } from "./concurrency.js";
 
 export interface ExecutorDeps {
   router: ModelRouter;
@@ -73,6 +74,8 @@ function suppressPromptEchoedByError(error: unknown, channelName: string): unkno
 }
 
 export class Executor {
+  private readonly channelLimiters = new Map<number, AdaptiveConcurrencyLimiter>();
+
   constructor(private readonly deps: ExecutorDeps) {}
 
   generate(publicName: string, req: UnifiedGenRequest, opts: ExecutorOptions): Promise<ExecutorResult> {
@@ -103,57 +106,71 @@ export class Executor {
       if (user!.quotaTotal! - user!.quotaUsed < wanted) throw new QuotaError();
     }
 
-    const start = Date.now();
-    const attempted = new Set<number>();
-    const maxAttempts = this.deps.repo.enabledKeyCount(channel.id);
-    let lastError: unknown = null;
+    const limiter = this.limiterFor(channel.id, channel.concurrency);
+    return limiter.run(async () => {
+      const start = Date.now();
+      const attempted = new Set<number>();
+      const maxAttempts = this.deps.repo.enabledKeyCount(channel.id);
+      let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const key = this.deps.keyPool.pick(channel.id);
-      if (!key || attempted.has(key.keyId)) break;
-      attempted.add(key.keyId);
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const key = this.deps.keyPool.pick(channel.id);
+        if (!key || attempted.has(key.keyId)) break;
+        attempted.add(key.keyId);
 
-      const ctx: CallContext = {
-        channel,
-        upstreamModel: route.model.upstreamName,
-        apiKey: key.apiKey,
-        signal: opts.signal ?? new AbortController().signal,
-      };
-      try {
-        const upstreamResult =
-          payload.kind === "generate"
-            ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
-            : await provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
-        const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
-        this.deps.keyPool.markSuccess(key.keyId);
-        this.deps.router.markSuccess(channel.id);
-        if (quotaLimited) {
-          const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
-          if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
+        const ctx: CallContext = {
+          channel,
+          upstreamModel: route.model.upstreamName,
+          apiKey: key.apiKey,
+          signal: opts.signal ?? new AbortController().signal,
+        };
+        try {
+          const upstreamResult =
+            payload.kind === "generate"
+              ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
+              : await provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
+          const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
+          this.deps.keyPool.markSuccess(key.keyId);
+          this.deps.router.markSuccess(channel.id);
+          if (quotaLimited) {
+            const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
+            if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
+          }
+          const latencyMs = Date.now() - start;
+          this.log(publicName, channel.id, opts.callerApiKeyId, "ok", 200, latencyMs, null);
+          return { result, channel, latencyMs };
+        } catch (err) {
+          lastError = err;
+          const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
+          if (rotate) {
+            this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
+            continue;
+          }
+          // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入渠道熔断
+          this.deps.router.markFailure(channel.id);
+          this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
+          throw globalPrompt.trim() ? suppressPromptEchoedByError(err, channel.name) : err;
         }
-        const latencyMs = Date.now() - start;
-        this.log(publicName, channel.id, opts.callerApiKeyId, "ok", 200, latencyMs, null);
-        return { result, channel, latencyMs };
-      } catch (err) {
-        lastError = err;
-        const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
-        if (rotate) {
-          this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
-          continue;
-        }
-        // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入渠道熔断
-        this.deps.router.markFailure(channel.id);
-        this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
-        throw globalPrompt.trim() ? suppressPromptEchoedByError(err, channel.name) : err;
       }
-    }
 
-    const error =
-      lastError ??
-      new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
-    this.deps.router.markFailure(channel.id);
-    this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
-    throw globalPrompt.trim() ? suppressPromptEchoedByError(error, channel.name) : error;
+      const error =
+        lastError ??
+        new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
+      this.deps.router.markFailure(channel.id);
+      this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
+      throw globalPrompt.trim() ? suppressPromptEchoedByError(error, channel.name) : error;
+    });
+  }
+
+  private limiterFor(channelId: number, concurrency: number): AdaptiveConcurrencyLimiter {
+    let limiter = this.channelLimiters.get(channelId);
+    if (!limiter) {
+      limiter = new AdaptiveConcurrencyLimiter(concurrency);
+      this.channelLimiters.set(channelId, limiter);
+    } else {
+      limiter.setMax(concurrency);
+    }
+    return limiter;
   }
 
   private log(
