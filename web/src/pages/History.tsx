@@ -250,19 +250,20 @@ export default function History() {
               <div className="detail-gallery">
                 {detail.images.map((img, i) => (
                   <figure key={i} className="shot">
-                    <img
-                      src={img.url}
-                      alt={`历史图片 ${i + 1}`}
-                      loading="lazy"
-                      title="点击放大查看"
-                      onClick={(e) => {
-                        // 阻止冒泡到详情遮罩，避免点击图片时连带关闭详情。
-                        e.stopPropagation();
-                        setZoomSrc(img.url);
-                      }}
-                      onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
-                      onError={markExpired}
-                    />
+                    <span className="tip tip-block" data-tip="点击放大查看">
+                      <img
+                        src={img.url}
+                        alt={`历史图片 ${i + 1}`}
+                        loading="lazy"
+                        onClick={(e) => {
+                          // 阻止冒泡到详情遮罩，避免点击图片时连带关闭详情。
+                          e.stopPropagation();
+                          setZoomSrc(img.url);
+                        }}
+                        onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
+                        onError={markExpired}
+                      />
+                    </span>
                     <div className="shot-actions">
                       <button className="btn small" onClick={() => editImage(img.url)}>
                         编辑此图

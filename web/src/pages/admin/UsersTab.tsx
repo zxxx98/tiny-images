@@ -1,13 +1,18 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, type ChannelGroup, type UserView } from "../../api";
+import FormDialog from "../FormDialog";
+import { Pager, usePager } from "../Pager";
 
 const fmtTime = (ts: number): string => new Date(ts).toLocaleString();
+
+const TABLE_PAGE_SIZE = 20;
 
 export default function UsersTab() {
   const [users, setUsers] = useState<UserView[]>([]);
   const [groups, setGroups] = useState<ChannelGroup[]>([]);
   const [editing, setEditing] = useState<Partial<UserView> & { password?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pager = usePager(users, TABLE_PAGE_SIZE);
 
   const load = (): void => {
     api<UserView[]>("/admin/users").then(setUsers).catch((e) => setError(e.message));
@@ -73,70 +78,84 @@ export default function UsersTab() {
 
   return (
     <div className="card">
-      {error && (
+      {error && !editing && (
         <div className="error" role="alert">
           {error}
         </div>
       )}
-      <button className="btn primary" onClick={() => setEditing({ enabled: true, groupIds: [], allowNsfw: false })}>
-        新建用户
-      </button>
+      <span className="tip" data-tip="创建一个可登录并消耗额度的用户账号">
+        <button className="btn primary" onClick={() => setEditing({ enabled: true, groupIds: [], allowNsfw: false })}>
+          新建用户
+        </button>
+      </span>
       {editing && (
-        <form className="inline-form" onSubmit={save}>
-          <h3>{editing.id ? `编辑用户 ${editing.email}` : "新建用户"}</h3>
-          {!editing.id && (
-            <>
-              <label htmlFor="u-email">邮箱（登录账号）</label>
-              <input id="u-email" type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} required />
-            </>
+        <FormDialog title={editing.id ? `编辑用户 ${editing.email}` : "新建用户"} onClose={() => setEditing(null)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
           )}
-          <label htmlFor="u-password">{editing.id ? "重置密码（留空不修改）" : "初始密码（至少 6 位）"}</label>
-          <input
-            id="u-password"
-            type="text"
-            value={editing.password ?? ""}
-            onChange={(e) => setEditing({ ...editing, password: e.target.value })}
-            {...(editing.id ? {} : { required: true, minLength: 6 })}
-          />
-          <label htmlFor="u-quota">额度（生图张数，正整数）</label>
-          <input
-            id="u-quota"
-            type="number"
-            min={1}
-            step={1}
-            value={editing.quotaTotal ?? ""}
-            onChange={(e) => setEditing({ ...editing, quotaTotal: e.target.value === "" ? undefined : Number(e.target.value) })}
-            required
-          />
-          <label>渠道分组（不选 = 不限渠道）</label>
-          <div className="keys">
-            {groups.map((g) => (
-              <span key={g.id} className={`pill ${(editing.groupIds ?? []).includes(g.id) ? "" : "off"}`}>
-                <button className="link" type="button" onClick={() => toggleGroup(g.id)}>
-                  {(editing.groupIds ?? []).includes(g.id) ? "✓ " : "+ "}
-                  {g.name}
-                </button>
-              </span>
-            ))}
-            {groups.length === 0 && <span className="muted">尚无分组，可先在「分组」页创建。</span>}
-          </div>
-          <label className="check">
-            <input type="checkbox" checked={editing.allowNsfw ?? false} onChange={(e) => setEditing({ ...editing, allowNsfw: e.target.checked })} /> 允许使用 NSFW 模型
-          </label>
-          {editing.id && (
-            <label className="check">
-              <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
+          <form onSubmit={save}>
+            {!editing.id && (
+              <>
+                <label htmlFor="u-email">邮箱（登录账号）</label>
+                <input id="u-email" type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} required />
+              </>
+            )}
+            <label htmlFor="u-password">{editing.id ? "重置密码（留空不修改）" : "初始密码（至少 6 位）"}</label>
+            <input
+              id="u-password"
+              type="text"
+              value={editing.password ?? ""}
+              onChange={(e) => setEditing({ ...editing, password: e.target.value })}
+              {...(editing.id ? {} : { required: true, minLength: 6 })}
+            />
+            <label htmlFor="u-quota" className="tip" data-tip="该用户总共可生成的图片张数">
+              额度（生图张数，正整数）
             </label>
-          )}
-          <div className="row">
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-            <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
-              取消
-            </button>
-          </div>
-        </form>
+            <input
+              id="u-quota"
+              type="number"
+              min={1}
+              step={1}
+              value={editing.quotaTotal ?? ""}
+              onChange={(e) => setEditing({ ...editing, quotaTotal: e.target.value === "" ? undefined : Number(e.target.value) })}
+              required
+            />
+            <label className="tip" data-tip="限制该用户可使用的渠道；不选则不限">渠道分组（不选 = 不限渠道）</label>
+            <div className="keys">
+              {groups.map((g) => (
+                <span
+                  key={g.id}
+                  className={`pill tip ${(editing.groupIds ?? []).includes(g.id) ? "" : "off"}`}
+                  data-tip={(editing.groupIds ?? []).includes(g.id) ? `点击把用户移出「${g.name}」` : `点击把用户加入「${g.name}」`}
+                >
+                  <button className="link" type="button" onClick={() => toggleGroup(g.id)}>
+                    {(editing.groupIds ?? []).includes(g.id) ? "✓ " : "+ "}
+                    {g.name}
+                  </button>
+                </span>
+              ))}
+              {groups.length === 0 && <span className="muted">尚无分组，可先在「分组」页创建。</span>}
+            </div>
+            <label className="check">
+              <input type="checkbox" checked={editing.allowNsfw ?? false} onChange={(e) => setEditing({ ...editing, allowNsfw: e.target.checked })} /> 允许使用 NSFW 模型
+            </label>
+            {editing.id && (
+              <label className="check">
+                <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
+              </label>
+            )}
+            <div className="row">
+              <button className="btn primary" type="submit">
+                保存
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
       )}
       {users.length === 0 && <p className="muted">还没有用户。</p>}
       <div className="table-scroll">
@@ -154,7 +173,7 @@ export default function UsersTab() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {pager.slice.map((u) => (
               <tr key={u.id}>
                 <td>{u.email}</td>
                 <td>{u.role}</td>
@@ -172,21 +191,31 @@ export default function UsersTab() {
                 <td><span className={`pill ${u.allowNsfw ? "" : "off"}`}>{u.allowNsfw ? "允许" : "禁止"}</span></td>
                 <td className="muted">{fmtTime(u.createdAt)}</td>
                 <td>
-                  <button className="btn small" onClick={() => toggleNsfw(u)}>{u.allowNsfw ? "禁止 NSFW" : "允许 NSFW"}</button>{" "}
+                  <span className="tip tip-end" data-tip={u.allowNsfw ? "收回该用户的 NSFW 模型权限" : "放开该用户的 NSFW 模型权限"}>
+                    <button className="btn small" onClick={() => toggleNsfw(u)}>{u.allowNsfw ? "禁止 NSFW" : "允许 NSFW"}</button>
+                  </span>{" "}
                   {u.role === "user" && (
                     <>
-                      <button className="btn small" onClick={() => setEditing({ ...u })}>
-                        编辑
-                      </button>{" "}
-                      <button className="btn small" onClick={() => resetPassword(u)}>
-                        重置密码
-                      </button>{" "}
-                      <button className="btn small" onClick={() => toggleEnabled(u)}>
-                        {u.enabled ? "禁用" : "启用"}
-                      </button>{" "}
-                      <button className="btn small danger" onClick={() => remove(u)}>
-                        删除
-                      </button>
+                      <span className="tip tip-end" data-tip="修改额度、分组、密码与启停">
+                        <button className="btn small" onClick={() => setEditing({ ...u })}>
+                          编辑
+                        </button>
+                      </span>{" "}
+                      <span className="tip tip-end" data-tip="为该用户设置新密码">
+                        <button className="btn small" onClick={() => resetPassword(u)}>
+                          重置密码
+                        </button>
+                      </span>{" "}
+                      <span className="tip tip-end" data-tip={u.enabled ? "禁用后该用户无法登录与调用" : "恢复该用户登录与调用"}>
+                        <button className="btn small" onClick={() => toggleEnabled(u)}>
+                          {u.enabled ? "禁用" : "启用"}
+                        </button>
+                      </span>{" "}
+                      <span className="tip tip-end" data-tip="删除用户，其 API key 将解绑（保留但不再计额度）">
+                        <button className="btn small danger" onClick={() => remove(u)}>
+                          删除
+                        </button>
+                      </span>
                     </>
                   )}
                 </td>
@@ -195,6 +224,7 @@ export default function UsersTab() {
           </tbody>
         </table>
       </div>
+      <Pager page={pager.page} pageCount={pager.pageCount} total={pager.total} label="用户" onPage={pager.setPage} />
     </div>
   );
 }

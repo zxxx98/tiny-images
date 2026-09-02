@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, fetchChannelHealth, type ApiKey, type Channel, type ChannelHealth, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
+import FormDialog from "./FormDialog";
+import { Pager, usePager } from "./Pager";
 import GroupsTab from "./admin/GroupsTab";
 import UsersTab from "./admin/UsersTab";
 import SettingsTab from "./admin/SettingsTab";
@@ -16,6 +18,8 @@ const TABS: [Tab, string][] = [
   ["logs", "请求日志"],
   ["settings", "设置"],
 ];
+
+const TABLE_PAGE_SIZE = 20;
 
 const fmtTime = (ts: number): string => new Date(ts).toLocaleString();
 
@@ -182,7 +186,7 @@ function ChannelsTab() {
           {msg}
         </div>
       )}
-      {error && (
+      {error && !editing && (
         <div className="error" role="alert">
           {error}
         </div>
@@ -193,93 +197,107 @@ function ChannelsTab() {
         <span className="pill">正常 {healthyCount}</span>
         <span className={`pill ${errorCount ? "error" : ""}`}>需关注 {errorCount}</span>
         <span className="pill">可用 Key {availableKeys}</span>
-        <button className="btn small" onClick={load}>刷新</button>
+        <button className="btn small tip" onClick={load} data-tip="重新拉取渠道列表与健康度">
+          刷新
+        </button>
       </div>
-      <button className="btn primary" onClick={() => openEdit(null)}>
+      <button className="btn primary tip" onClick={() => openEdit(null)} data-tip="添加一个上游生图服务">
         新建渠道
       </button>
       {editing && (
-        <form className="inline-form" onSubmit={save}>
-          <h3>{editing.id ? "编辑渠道" : "新建渠道"}</h3>
-          <label htmlFor="ch-name">名称</label>
-          <input id="ch-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
-          <label htmlFor="ch-type">渠道类型</label>
-          <select
-            id="ch-type"
-            value={editing.type ?? "openai-compat"}
-            onChange={(e) => setEditing(changeChannelType(editing, e.target.value as Channel["type"]))}
-          >
-            <option value="openai-compat">OpenAI Compatible</option>
-            <option value="ai-horde">AI Horde</option>
-          </select>
-          <label htmlFor="ch-base-url">Base URL</label>
-          <input
-            id="ch-base-url"
-            placeholder={editing.type === "ai-horde" ? "https://aihorde.net/api/v2" : "https://api.openai.com/v1"}
-            value={editing.baseUrl ?? ""}
-            onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
-            required
-          />
-          <label htmlFor="ch-timeout">超时（毫秒）</label>
-          <input
-            id="ch-timeout"
-            type="number"
-            min={1000}
-            step={1000}
-            value={editing.timeoutMs ?? 120000}
-            onChange={(e) => setEditing({ ...editing, timeoutMs: Number(e.target.value) })}
-          />
-          <label htmlFor="ch-concurrency">并发数</label>
-          <input
-            id="ch-concurrency"
-            type="number"
-            min={1}
-            step={1}
-            value={editing.concurrency ?? 2}
-            onChange={(e) => setEditing({ ...editing, concurrency: Number(e.target.value) })}
-          />
-          {editing.type === "ai-horde" ? (
-            <p className="muted">
-              AI Horde 是排队式异步服务，生成速度取决于在线 worker；图片编辑能力也取决于所选模型和 worker。可填写注册 key，匿名调用请使用 0000000000。
-            </p>
-          ) : (
-            <>
-              <label htmlFor="ch-generation-mode">图片生成请求方式</label>
-              <select id="ch-generation-mode" value={editing.generationMode ?? "images"} onChange={(e) => setEditing({ ...editing, generationMode: e.target.value as Channel["generationMode"] })}>
-                <option value="images">Images API（/images/generations）</option>
-                <option value="chat">Chat API（/chat/completions）</option>
-              </select>
-              <p className="muted">Chat 模式会把现有图片生成请求转为 chat 请求，并把返回图片统一为 Images API 格式。</p>
-              <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
-              <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
-                <option value="auto">auto（自动回退）</option>
-                <option value="multipart">multipart（标准表单上传）</option>
-                <option value="json-base64">json-base64（JSON + base64 图片）</option>
-              </select>
-            </>
+        <FormDialog title={editing.id ? "编辑渠道" : "新建渠道"} onClose={() => setEditing(null)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
           )}
-          <label htmlFor="ch-headers">额外 Headers（JSON，可选）</label>
-          <textarea
-            id="ch-headers"
-            className="mono"
-            rows={2}
-            value={headersText}
-            onChange={(e) => setHeadersText(e.target.value)}
-            placeholder='{"x-foo":"bar"}'
-            spellCheck={false}
-          />
-          <label className="check">
-            <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
-          </label>
-          <div className="row">
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-            <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
-              取消
-            </button>
-          </div>
-        </form>
+          <form onSubmit={save}>
+            <label htmlFor="ch-name">名称</label>
+            <input id="ch-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
+            <label htmlFor="ch-type">渠道类型</label>
+            <select
+              id="ch-type"
+              value={editing.type ?? "openai-compat"}
+              onChange={(e) => setEditing(changeChannelType(editing, e.target.value as Channel["type"]))}
+            >
+              <option value="openai-compat">OpenAI Compatible</option>
+              <option value="ai-horde">AI Horde</option>
+            </select>
+            <label htmlFor="ch-base-url">Base URL</label>
+            <input
+              id="ch-base-url"
+              placeholder={editing.type === "ai-horde" ? "https://aihorde.net/api/v2" : "https://api.openai.com/v1"}
+              value={editing.baseUrl ?? ""}
+              onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
+              required
+            />
+            <label htmlFor="ch-timeout" className="tip" data-tip="单次上游请求的最长等待时间">
+              超时（毫秒）
+            </label>
+            <input
+              id="ch-timeout"
+              type="number"
+              min={1000}
+              step={1000}
+              value={editing.timeoutMs ?? 120000}
+              onChange={(e) => setEditing({ ...editing, timeoutMs: Number(e.target.value) })}
+            />
+            <label htmlFor="ch-concurrency" className="tip" data-tip="该渠道同时处理的最大请求数">
+              并发数
+            </label>
+            <input
+              id="ch-concurrency"
+              type="number"
+              min={1}
+              step={1}
+              value={editing.concurrency ?? 2}
+              onChange={(e) => setEditing({ ...editing, concurrency: Number(e.target.value) })}
+            />
+            {editing.type === "ai-horde" ? (
+              <p className="muted">
+                AI Horde 是排队式异步服务，生成速度取决于在线 worker；图片编辑能力也取决于所选模型和 worker。可填写注册 key，匿名调用请使用 0000000000。
+              </p>
+            ) : (
+              <>
+                <label htmlFor="ch-generation-mode">图片生成请求方式</label>
+                <select id="ch-generation-mode" value={editing.generationMode ?? "images"} onChange={(e) => setEditing({ ...editing, generationMode: e.target.value as Channel["generationMode"] })}>
+                  <option value="images">Images API（/images/generations）</option>
+                  <option value="chat">Chat API（/chat/completions）</option>
+                </select>
+                <p className="muted">Chat 模式会把现有图片生成请求转为 chat 请求，并把返回图片统一为 Images API 格式。</p>
+                <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
+                <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
+                  <option value="auto">auto（自动回退）</option>
+                  <option value="multipart">multipart（标准表单上传）</option>
+                  <option value="json-base64">json-base64（JSON + base64 图片）</option>
+                </select>
+              </>
+            )}
+            <label htmlFor="ch-headers" className="tip" data-tip="以 JSON 对象透传给上游的附加请求头">
+              额外 Headers（JSON，可选）
+            </label>
+            <textarea
+              id="ch-headers"
+              className="mono"
+              rows={2}
+              value={headersText}
+              onChange={(e) => setHeadersText(e.target.value)}
+              placeholder='{"x-foo":"bar"}'
+              spellCheck={false}
+            />
+            <label className="check">
+              <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
+            </label>
+            <div className="row">
+              <button className="btn primary" type="submit">
+                保存
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
       )}
       {channels.length === 0 && <p className="muted">还没有渠道。点击「新建渠道」添加上游生图服务，然后为它录入 apiKey。</p>}
       {channels.map((c) => (
@@ -287,7 +305,10 @@ function ChannelsTab() {
           <div className="entity-head">
             <strong>{c.name}</strong>
             {healthByChannel.get(c.id) && (
-              <span className={`pill ${healthClass(healthByChannel.get(c.id)!.status)}`}>
+              <span
+                className={`pill tip ${healthClass(healthByChannel.get(c.id)!.status)}`}
+                data-tip={`成功率 ${fmtRate(healthByChannel.get(c.id)!.requests.successRate)} · 平均延迟 ${fmtLatency(healthByChannel.get(c.id)!.requests.averageLatencyMs)}`}
+              >
                 {healthLabel[healthByChannel.get(c.id)!.status]}
               </span>
             )}
@@ -296,18 +317,26 @@ function ChannelsTab() {
             <span className={`pill ${c.enabled ? "" : "off"}`}>{c.enabled ? "启用" : "停用"}</span>
             <span className="muted mono">{c.baseUrl}</span>
             <span className="spacer" />
-            <button className="btn small" onClick={() => testChannel(c.id)}>
-              测试连通性
-            </button>
-            <button className="btn small" onClick={() => openEdit(c)}>
-              编辑
-            </button>
-            <button className="btn small" onClick={() => toggle(c)}>
-              {c.enabled ? "停用" : "启用"}
-            </button>
-            <button className="btn small danger" onClick={() => remove(c.id)}>
-              删除
-            </button>
+            <span className="tip tip-end" data-tip="向上游发送一次真实请求，验证配置与连通性">
+              <button className="btn small" onClick={() => testChannel(c.id)}>
+                测试连通性
+              </button>
+            </span>
+            <span className="tip tip-end" data-tip="修改渠道配置">
+              <button className="btn small" onClick={() => openEdit(c)}>
+                编辑
+              </button>
+            </span>
+            <span className="tip tip-end" data-tip={c.enabled ? "停用后不再向该渠道分发请求" : "重新启用该渠道"}>
+              <button className="btn small" onClick={() => toggle(c)}>
+                {c.enabled ? "停用" : "启用"}
+              </button>
+            </span>
+            <span className="tip tip-end" data-tip="删除渠道会同时删除它的 keys 与模型映射">
+              <button className="btn small danger" onClick={() => remove(c.id)}>
+                删除
+              </button>
+            </span>
           </div>
           {healthByChannel.get(c.id) && (
             <div className="health-details muted">
@@ -322,12 +351,16 @@ function ChannelsTab() {
             {(c.keys ?? []).map((k) => (
               <span key={k.id} className={`pill mono ${k.enabled ? "" : "off"}`}>
                 {maskKey(k.apiKey)}
-                <button className="link" onClick={() => toggleKey(k)}>
-                  {k.enabled ? "停用" : "启用"}
-                </button>
-                <button className="link danger" onClick={() => removeKey(k.id)}>
-                  删除
-                </button>
+                <span className="tip" data-tip={k.enabled ? "停用该 key（不删除）" : "重新启用该 key"}>
+                  <button className="link" onClick={() => toggleKey(k)}>
+                    {k.enabled ? "停用" : "启用"}
+                  </button>
+                </span>
+                <span className="tip" data-tip="从该渠道删除此 key">
+                  <button className="link danger" onClick={() => removeKey(k.id)}>
+                    删除
+                  </button>
+                </span>
               </span>
             ))}
             <KeyInput onAdd={(key) => addKey(c.id, key)} />
@@ -355,9 +388,11 @@ function KeyInput({ onAdd }: { onAdd: (key: string) => void }) {
           if (e.key === "Enter") add();
         }}
       />
-      <button className="btn small" onClick={add}>
-        添加
-      </button>
+      <span className="tip" data-tip="回车或点击添加，key 仅在列表中脱敏显示">
+        <button className="btn small" onClick={add}>
+          添加
+        </button>
+      </span>
     </span>
   );
 }
@@ -374,6 +409,7 @@ function ModelsTab() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [editing, setEditing] = useState<Partial<ModelMapping> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pager = usePager(models, TABLE_PAGE_SIZE);
 
   const load = (): void => {
     api<ModelMapping[]>("/admin/models").then(setModels).catch((e) => setError(e.message));
@@ -403,71 +439,81 @@ function ModelsTab() {
 
   return (
     <div className="card">
-      {error && (
+      {error && !editing && (
         <div className="error" role="alert">
           {error}
         </div>
       )}
-      <button className="btn primary" onClick={() => setEditing({ enabled: true, supportsImageToImage: false, supportsNsfw: false })} disabled={channels.length === 0}>
-        新建映射
-      </button>
+      <span className="tip" data-tip={channels.length === 0 ? "请先在「渠道」页添加并启用一个渠道" : "把对外 model 名路由到某个渠道的上游模型"}>
+        <button className="btn primary" onClick={() => setEditing({ enabled: true, supportsImageToImage: false, supportsNsfw: false })} disabled={channels.length === 0}>
+          新建映射
+        </button>
+      </span>
       {channels.length === 0 && <p className="muted">还没有渠道。请先在「渠道」页添加并启用一个渠道，再建立模型映射。</p>}
       <p className="muted">同一个对外 model 名可建多条映射（如主备渠道），按优先级从小到大依次尝试；某渠道连续失败会自动熔断冷却。</p>
       {editing && (
-        <form className="inline-form" onSubmit={save}>
-          <h3>{editing.id ? "编辑映射" : "新建映射"}</h3>
-          <label htmlFor="m-public">对外 model 名（调用方使用）</label>
-          <input id="m-public" value={editing.publicName ?? ""} onChange={(e) => setEditing({ ...editing, publicName: e.target.value })} required />
-          <label htmlFor="m-channel">渠道</label>
-          <select id="m-channel" value={editing.channelId ?? ""} onChange={(e) => setEditing({ ...editing, channelId: Number(e.target.value) })} required>
-            <option value="" disabled>
-              选择渠道…
-            </option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+        <FormDialog title={editing.id ? "编辑映射" : "新建映射"} onClose={() => setEditing(null)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <form onSubmit={save}>
+            <label htmlFor="m-public">对外 model 名（调用方使用）</label>
+            <input id="m-public" value={editing.publicName ?? ""} onChange={(e) => setEditing({ ...editing, publicName: e.target.value })} required />
+            <label htmlFor="m-channel">渠道</label>
+            <select id="m-channel" value={editing.channelId ?? ""} onChange={(e) => setEditing({ ...editing, channelId: Number(e.target.value) })} required>
+              <option value="" disabled>
+                选择渠道…
               </option>
-            ))}
-          </select>
-          <label htmlFor="m-upstream">上游 model 名（留空则同对外名）</label>
-          <input id="m-upstream" value={editing.upstreamName ?? ""} onChange={(e) => setEditing({ ...editing, upstreamName: e.target.value })} />
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="m-upstream">上游 model 名（留空则同对外名）</label>
+            <input id="m-upstream" value={editing.upstreamName ?? ""} onChange={(e) => setEditing({ ...editing, upstreamName: e.target.value })} />
 
-          <label htmlFor="m-priority">优先级（数字越小越先用，用于多渠道故障转移）</label>
-          <input
-            id="m-priority"
-            type="number"
-            step={1}
-            value={editing.priority ?? 0}
-            onChange={(e) => setEditing({ ...editing, priority: Number(e.target.value) })}
-          />
-          <label className="check">
+            <label htmlFor="m-priority" className="tip" data-tip="数字越小越先用；多条映射按此顺序故障转移">
+              优先级（数字越小越先用，用于多渠道故障转移）
+            </label>
             <input
-              type="checkbox"
-              checked={editing.supportsImageToImage ?? false}
-              onChange={(e) => setEditing({ ...editing, supportsImageToImage: e.target.checked })}
-            />{" "}
-            支持图生图
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={editing.supportsNsfw ?? false}
-              onChange={(e) => setEditing({ ...editing, supportsNsfw: e.target.checked })}
-            />{" "}
-            支持 NSFW
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
-          </label>
-          <div className="row">
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-            <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
-              取消
-            </button>
-          </div>
-        </form>
+              id="m-priority"
+              type="number"
+              step={1}
+              value={editing.priority ?? 0}
+              onChange={(e) => setEditing({ ...editing, priority: Number(e.target.value) })}
+            />
+            <label className="check tip" data-tip="勾选后该模型可用于图片编辑（图生图）">
+              <input
+                type="checkbox"
+                checked={editing.supportsImageToImage ?? false}
+                onChange={(e) => setEditing({ ...editing, supportsImageToImage: e.target.checked })}
+              />{" "}
+              支持图生图
+            </label>
+            <label className="check tip" data-tip="勾选后仅对开启 NSFW 权限的用户开放">
+              <input
+                type="checkbox"
+                checked={editing.supportsNsfw ?? false}
+                onChange={(e) => setEditing({ ...editing, supportsNsfw: e.target.checked })}
+              />{" "}
+              支持 NSFW
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
+            </label>
+            <div className="row">
+              <button className="btn primary" type="submit">
+                保存
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
       )}
       {models.length === 0 && <p className="muted">还没有模型映射。</p>}
       <div className="table-scroll">
@@ -485,7 +531,7 @@ function ModelsTab() {
             </tr>
           </thead>
           <tbody>
-            {models.map((m) => (
+            {pager.slice.map((m) => (
               <tr key={m.id}>
                 <td className="mono">{m.publicName}</td>
                 <td>{m.priority}</td>
@@ -501,18 +547,23 @@ function ModelsTab() {
                   <span className={`pill ${m.enabled ? "" : "off"}`}>{m.enabled ? "启用" : "停用"}</span>
                 </td>
                 <td>
-                  <button className="btn small" onClick={() => setEditing(m)}>
-                    编辑
-                  </button>{" "}
-                  <button className="btn small danger" onClick={() => remove(m.id)}>
-                    删除
-                  </button>
+                  <span className="tip tip-end" data-tip="修改这条映射">
+                    <button className="btn small" onClick={() => setEditing(m)}>
+                      编辑
+                    </button>
+                  </span>{" "}
+                  <span className="tip tip-end" data-tip="删除后外部无法再调用该 model 名">
+                    <button className="btn small danger" onClick={() => remove(m.id)}>
+                      删除
+                    </button>
+                  </span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <Pager page={pager.page} pageCount={pager.pageCount} total={pager.total} label="模型映射" onPage={pager.setPage} />
     </div>
   );
 }
@@ -522,11 +573,13 @@ function ModelsTab() {
 function ApiKeysTab() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [users, setUsers] = useState<UserView[]>([]);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [userId, setUserId] = useState<string>("");
   const [created, setCreated] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pager = usePager(keys, TABLE_PAGE_SIZE);
 
   const load = (): void => {
     api<ApiKey[]>("/admin/api-keys").then(setKeys).catch((e) => setError(e.message));
@@ -547,6 +600,8 @@ function ApiKeysTab() {
       });
       setCreated(k.key);
       setName("");
+      setUserId("");
+      setCreating(false);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -566,7 +621,7 @@ function ApiKeysTab() {
 
   return (
     <div className="card">
-      {error && (
+      {error && !creating && (
         <div className="error" role="alert">
           {error}
         </div>
@@ -579,22 +634,43 @@ function ApiKeysTab() {
           </button>
         </div>
       )}
-      <form className="row" onSubmit={create}>
-        <label htmlFor="ak-name">Key 名称</label>
-        <input id="ak-name" placeholder="如 my-app-prod" value={name} onChange={(e) => setName(e.target.value)} required />
-        <label htmlFor="ak-user">关联用户（可选）</label>
-        <select id="ak-user" value={userId} onChange={(e) => setUserId(e.target.value)}>
-          <option value="">不关联（不计额度）</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.email}
-            </option>
-          ))}
-        </select>
-        <button className="btn primary" type="submit">
+      <span className="tip" data-tip="生成调用 /v1 接口所用的 API Key">
+        <button className="btn primary" onClick={() => setCreating(true)}>
           生成新 Key
         </button>
-      </form>
+      </span>
+      {creating && (
+        <FormDialog title="生成新 Key" onClose={() => setCreating(false)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <form onSubmit={create}>
+            <label htmlFor="ak-name">Key 名称</label>
+            <input id="ak-name" placeholder="如 my-app-prod" value={name} onChange={(e) => setName(e.target.value)} required />
+            <label htmlFor="ak-user" className="tip" data-tip="关联后该 key 的调用量计入用户额度；不关联则不限量">
+              关联用户（可选）
+            </label>
+            <select id="ak-user" value={userId} onChange={(e) => setUserId(e.target.value)}>
+              <option value="">不关联（不计额度）</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
+            <div className="row">
+              <button className="btn primary" type="submit">
+                生成
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setCreating(false)}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
+      )}
       {keys.length === 0 && <p className="muted">还没有 API Key。未配置任何 key 时 /v1 接口不启用鉴权。</p>}
       <div className="table-scroll">
         <table>
@@ -609,7 +685,7 @@ function ApiKeysTab() {
             </tr>
           </thead>
           <tbody>
-            {keys.map((k) => (
+            {pager.slice.map((k) => (
               <tr key={k.id}>
                 <td>{k.name}</td>
                 <td>{k.userEmail ?? <span className="muted">-</span>}</td>
@@ -619,31 +695,36 @@ function ApiKeysTab() {
                 </td>
                 <td className="muted">{fmtTime(k.createdAt)}</td>
                 <td>
-                  <button
-                    className="btn small"
-                    onClick={async () => {
-                      await api(`/admin/api-keys/${k.id}`, { method: "PATCH", body: { enabled: !k.enabled } });
-                      load();
-                    }}
-                  >
-                    {k.enabled ? "停用" : "启用"}
-                  </button>{" "}
-                  <button
-                    className="btn small danger"
-                    onClick={async () => {
-                      if (!confirm("确认删除该 key？使用它的客户端将立即失去访问权限。")) return;
-                      await api(`/admin/api-keys/${k.id}`, { method: "DELETE" });
-                      load();
-                    }}
-                  >
-                    删除
-                  </button>
+                  <span className="tip tip-end" data-tip={k.enabled ? "停用后该 key 立即失效，可再启用" : "重新启用该 key"}>
+                    <button
+                      className="btn small"
+                      onClick={async () => {
+                        await api(`/admin/api-keys/${k.id}`, { method: "PATCH", body: { enabled: !k.enabled } });
+                        load();
+                      }}
+                    >
+                      {k.enabled ? "停用" : "启用"}
+                    </button>
+                  </span>{" "}
+                  <span className="tip tip-end" data-tip="使用它的客户端将立即失去访问权限">
+                    <button
+                      className="btn small danger"
+                      onClick={async () => {
+                        if (!confirm("确认删除该 key？使用它的客户端将立即失去访问权限。")) return;
+                        await api(`/admin/api-keys/${k.id}`, { method: "DELETE" });
+                        load();
+                      }}
+                    >
+                      删除
+                    </button>
+                  </span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <Pager page={pager.page} pageCount={pager.pageCount} total={pager.total} label="API Keys" onPage={pager.setPage} />
     </div>
   );
 }

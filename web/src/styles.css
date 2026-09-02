@@ -503,8 +503,53 @@ textarea:disabled {
   box-shadow: var(--bevel-out-shadow);
 }
 
-.btn-tooltip {
-  display: inline-flex;
+/* ---- Win95 风格 tooltip：任意元素加 .tip + data-tip 即可；禁用按钮需包一层 span ---- */
+.tip {
+  position: relative;
+}
+
+.tip::after {
+  content: attr(data-tip);
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+  background: #ffffe1;
+  color: #000;
+  border: 1px solid #000;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  width: max-content;
+  max-width: 240px;
+  z-index: 300;
+  pointer-events: none;
+}
+
+.tip[data-tip]:not([data-tip=""]):hover::after,
+.tip[data-tip]:not([data-tip=""]):focus-within::after {
+  display: block;
+}
+
+/* 靠近右/左边缘时改对齐方向，避免气泡溢出窗口 */
+.tip.tip-end::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.tip.tip-start::after {
+  left: 0;
+  transform: none;
+}
+
+/* 包裹块级元素（如图片）时的 tooltip 载体 */
+.tip-block {
+  display: block;
 }
 
 .menubar .btn.small {
@@ -979,6 +1024,37 @@ tbody tr:nth-child(even) {
 .inline-form select,
 .inline-form textarea {
   background: #ffffff;
+}
+
+/* ---- 弹窗表单（FormDialog）---- */
+.form-window {
+  width: min(560px, 100%);
+}
+
+.form-dialog-body {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-dialog-body form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-dialog-body label {
+  margin-top: 0;
+}
+
+/* ---- 表格分页 ---- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 details summary {

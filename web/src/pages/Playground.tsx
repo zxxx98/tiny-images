@@ -708,7 +708,7 @@ export default function Playground() {
             <button type="button" className={`btn ${mode === "generate" ? "primary" : "ghost"}`} aria-pressed={mode === "generate"} onClick={() => setMode("generate")}>
               文生图
             </button>
-            <span className="btn-tooltip" title={!hasEditableModel ? EDIT_NOT_SUPPORTED_MESSAGE : undefined}>
+            <span className="tip" data-tip={!hasEditableModel ? EDIT_NOT_SUPPORTED_MESSAGE : "上传图片，让支持图生图的模型按提示词修改"}>
               <button
                 type="button"
                 className={`btn ${mode === "edit" ? "primary" : "ghost"}`}
@@ -720,26 +720,30 @@ export default function Playground() {
               </button>
             </span>
             {upscaleEnabled && (
-              <button
-                type="button"
-                className={`btn ${mode === "upscale" ? "primary" : "ghost"}`}
-                aria-pressed={mode === "upscale"}
-                disabled={running}
-                onClick={() => setMode("upscale")}
-              >
-                图片超分
-              </button>
+              <span className="tip" data-tip="用 AI 把图片放大 2× 或 4×，提升分辨率">
+                <button
+                  type="button"
+                  className={`btn ${mode === "upscale" ? "primary" : "ghost"}`}
+                  aria-pressed={mode === "upscale"}
+                  disabled={running}
+                  onClick={() => setMode("upscale")}
+                >
+                  图片超分
+                </button>
+              </span>
             )}
             {reverseEnabled && (
-              <button
-                type="button"
-                className={`btn ${mode === "reverse" ? "primary" : "ghost"}`}
-                aria-pressed={mode === "reverse"}
-                disabled={running || reversing}
-                onClick={() => setMode("reverse")}
-              >
-                图片反推
-              </button>
+              <span className="tip" data-tip="由视觉模型从图片反推提示词">
+                <button
+                  type="button"
+                  className={`btn ${mode === "reverse" ? "primary" : "ghost"}`}
+                  aria-pressed={mode === "reverse"}
+                  disabled={running || reversing}
+                  onClick={() => setMode("reverse")}
+                >
+                  图片反推
+                </button>
+              </span>
             )}
           </div>
 
@@ -756,14 +760,16 @@ export default function Playground() {
                 }}
               />
               {reverseFile && reversePreview && (
-                <figure className="edit-preview reverse-preview" title={reverseFile.name}>
+                <figure className="edit-preview reverse-preview tip" data-tip={reverseFile.name}>
                   <img src={reversePreview} alt={`待反推图片：${reverseFile.name}`} />
                   <figcaption className="muted">{reverseFile.name}</figcaption>
                 </figure>
               )}
-              <button type="button" className="btn" onClick={() => void openReverseHistory()}>
-                从历史导入
-              </button>
+              <span className="tip" data-tip="从最近的生成记录中选一张图片来反推">
+                <button type="button" className="btn" onClick={() => void openReverseHistory()}>
+                  从历史导入
+                </button>
+              </span>
               {reverseHistoryOpen && (
                 <div className="reverse-history" role="group" aria-label="从历史导入图片">
                   {reverseHistoryLoading && <p className="muted">加载历史图片…</p>}
@@ -774,8 +780,8 @@ export default function Playground() {
                         <button
                           key={item.id}
                           type="button"
-                          className="reverse-history-tile"
-                          title={item.prompt ? item.prompt.slice(0, 60) : `记录 #${item.id}`}
+                          className="reverse-history-tile tip"
+                          data-tip={item.prompt ? item.prompt.slice(0, 60) : `记录 #${item.id}`}
                           onClick={() => void importReverseImage(item.images[0].url)}
                         >
                           <img src={item.images[0].url} alt="" loading="lazy" />
@@ -815,7 +821,7 @@ export default function Playground() {
                 required={!upscaleFile}
               />
               {upscaleFile && upscalePreview && (
-                <figure className="edit-preview upscale-preview" title={upscaleFile.name}>
+                <figure className="edit-preview upscale-preview tip" data-tip={upscaleFile.name}>
                   <img src={upscalePreview} alt={`超分原图：${upscaleFile.name}`} />
                   <figcaption className="muted">{upscaleFile.name}</figcaption>
                 </figure>
@@ -847,14 +853,14 @@ export default function Playground() {
                 {optimizerEnabled && (
                   <span className="prompt-actions">
                     {undoPrompt !== null && (
-                      <button className="btn small" type="button" onClick={undoOptimize} disabled={optimizing}>
+                      <button className="btn small tip" type="button" data-tip="回到 AI 改写前的提示词" onClick={undoOptimize} disabled={optimizing}>
                         撤销优化
                       </button>
                     )}
                     <button
-                      className="btn small"
+                      className="btn small tip"
                       type="button"
-                      title="用 AI 改写当前提示词"
+                      data-tip="用 AI 改写当前提示词"
                       onClick={() => void optimize()}
                       disabled={optimizing || running || !prompt.trim()}
                     >
@@ -928,7 +934,9 @@ export default function Playground() {
                 <option value="b64_json">b64_json</option>
               </select>
               <details>
-                <summary className="muted">高级参数（JSON，透传上游）</summary>
+                <summary className="muted tip" data-tip="以 JSON 对象透传给上游的附加参数，如 {&quot;seed&quot;:42}">
+                  高级参数（JSON，透传上游）
+                </summary>
                 <textarea aria-label="高级参数 JSON" rows={3} value={extra} onChange={(e) => setExtra(e.target.value)} onKeyDown={quickSubmit} spellCheck={false} />
               </details>
             </>
@@ -1029,12 +1037,13 @@ export default function Playground() {
               <div className="gallery">
                 {images.map((src, i) => (
                   <figure key={i} className="shot">
-                    <img
-                      src={src}
-                      alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
-                      title="点击放大查看"
-                      onClick={() => setZoomSrc(src)}
-                    />
+                    <span className="tip tip-block" data-tip="点击放大查看">
+                      <img
+                        src={src}
+                        alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
+                        onClick={() => setZoomSrc(src)}
+                      />
+                    </span>
                     <div className="shot-actions">
                       <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
                         下载

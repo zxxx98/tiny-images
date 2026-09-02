@@ -1,7 +1,8 @@
-import { Component, ReactNode, useEffect, useState } from "react";
+import { Component, FormEvent, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, QUOTA_EVENT, setRole, type Me } from "./api";
 import { APP_VERSION, GIT_HASH } from "./version";
+import FormDialog from "./pages/FormDialog";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
@@ -75,6 +76,10 @@ export default function App() {
   const location = useLocation();
   const [me, setMe] = useState<Me | null>(null);
   const [setupNeeded, setSetupNeeded] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [pwdError, setPwdError] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] ?? "tiny-images"} · tiny-images 95`;
@@ -113,16 +118,22 @@ export default function App() {
     navigate("/login");
   };
 
-  const changePassword = async () => {
-    const oldPassword = window.prompt("输入当前密码");
-    if (!oldPassword) return;
-    const newPassword = window.prompt("输入新密码（至少 6 位）");
-    if (!newPassword) return;
+  const closePwdDialog = (): void => {
+    setPwdOpen(false);
+    setOldPassword("");
+    setNewPassword("");
+    setPwdError(null);
+  };
+
+  const submitPassword = async (e: FormEvent): Promise<void> => {
+    e.preventDefault();
+    setPwdError(null);
     try {
       await api("/admin/auth/password", { method: "PUT", body: { oldPassword, newPassword } });
+      closePwdDialog();
       window.alert("密码已修改");
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "修改失败");
+      setPwdError(err instanceof Error ? err.message : "修改失败");
     }
   };
   return (
@@ -162,9 +173,11 @@ export default function App() {
           </span>
         )}
         {getToken() && (
-          <button className="btn small" onClick={changePassword}>
-            改密码
-          </button>
+          <span className="tip" data-tip="修改当前账号的登录密码">
+            <button className="btn small" onClick={() => setPwdOpen(true)}>
+              改密码
+            </button>
+          </span>
         )}
         {getToken() && (
           <button className="btn small" onClick={logout}>
@@ -173,6 +186,29 @@ export default function App() {
         )}
       </div>
       <Marquee />
+      {pwdOpen && (
+        <FormDialog title="修改密码" onClose={closePwdDialog}>
+          {pwdError && (
+            <div className="error" role="alert">
+              {pwdError}
+            </div>
+          )}
+          <form onSubmit={submitPassword}>
+            <label htmlFor="pwd-old">当前密码</label>
+            <input id="pwd-old" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} required autoComplete="current-password" />
+            <label htmlFor="pwd-new">新密码（至少 6 位）</label>
+            <input id="pwd-new" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} autoComplete="new-password" />
+            <div className="row">
+              <button className="btn primary" type="submit">
+                确认修改
+              </button>
+              <button className="btn ghost" type="button" onClick={closePwdDialog}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
+      )}
       <main>
         <ErrorBoundary>
           <Routes>
@@ -218,7 +254,7 @@ export default function App() {
       </main>
       <footer className="app-footer">
         <span className="hit-counter">Visitors: 0001997 | Since 1995</span>
-        <span className="hit-counter version-badge" title={`Commit ${GIT_HASH}`}>
+        <span className="hit-counter version-badge tip" data-tip={`Commit ${GIT_HASH}`}>
           {APP_VERSION}
         </span>
         <span>Best viewed in Netscape Navigator 3.0 at 800×600</span>

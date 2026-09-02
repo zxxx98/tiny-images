@@ -47,7 +47,7 @@ function ProbeStrip({ model }: { model: ModelHealth }) {
         {slots.map((sample, index) => {
           if (!sample) {
             return (
-              <span key={`empty-${index}`} className="probe-cell empty" aria-hidden="true" title="无样本">
+              <span key={`empty-${index}`} className="probe-cell empty tip" aria-hidden="true" data-tip="无样本">
                 ·
               </span>
             );
@@ -57,9 +57,9 @@ function ProbeStrip({ model }: { model: ModelHealth }) {
           return (
             <span
               key={`${sample.ts}-${index}`}
-              className={`probe-cell ${successful ? "success" : "failure"}`}
+              className={`probe-cell tip ${successful ? "success" : "failure"}`}
               aria-hidden="true"
-              title={detail}
+              data-tip={detail}
             >
               {successful ? "✓" : "×"}
             </span>
@@ -78,7 +78,7 @@ function ModelProbe({ model }: { model: ModelHealth }) {
   return (
     <article className={`model-probe status-${STATUS_META[status as ModelHealthStatus] ? status : "unknown"}`}>
       <header className="model-probe-head">
-        <h3 className="mono" title={model.model}>{model.model}</h3>
+        <h3 className="mono tip" data-tip={model.model}>{model.model}</h3>
         <span className={`status-badge status-${STATUS_META[status as ModelHealthStatus] ? status : "unknown"}`}>
           <span aria-hidden="true">{meta.symbol}</span> {meta.label}
         </span>

@@ -96,6 +96,6 @@ describe("App model status route", () => {
 
     const badge = container.querySelector<HTMLElement>(".version-badge");
     expect(badge?.textContent).toBe(APP_VERSION);
-    expect(badge?.title).toBe(`Commit ${GIT_HASH}`);
+    expect(badge?.getAttribute("data-tip")).toBe(`Commit ${GIT_HASH}`);
   });
 });
