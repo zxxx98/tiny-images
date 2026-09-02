@@ -29,7 +29,7 @@ describe("Playground edit mode", () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     localStorage.clear();
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false });
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => `blob:preview-${++objectUrl}`) });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
     Object.defineProperty(window, "scrollTo", { configurable: true, value: vi.fn() });

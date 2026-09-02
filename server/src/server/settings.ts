@@ -8,6 +8,19 @@ function requireText(body: Record<string, unknown>, field: string): string {
   return value;
 }
 
+// AI 提示词优化配置：三个字段都必须是字符串（可为空 = 未启用）
+function requirePromptOptimizer(value: unknown): { baseUrl: string; apiKey: string; model: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw httpError(400, "'promptOptimizer' must be an object");
+  }
+  const source = value as Record<string, unknown>;
+  return {
+    baseUrl: requireText(source, "baseUrl"),
+    apiKey: requireText(source, "apiKey"),
+    model: requireText(source, "model"),
+  };
+}
+
 export function registerSettings(ctx: AppContext): void {
   ctx.app.get("/admin/settings", { preHandler: ctx.requireAdmin }, async () => ctx.deps.repo.getAppSettings());
 
@@ -16,6 +29,9 @@ export function registerSettings(ctx: AppContext): void {
     return ctx.deps.repo.updateAppSettings({
       globalPrompt: requireText(body, "globalPrompt"),
       announcement: requireText(body, "announcement"),
+      ...(body.promptOptimizer === undefined
+        ? {}
+        : { promptOptimizer: requirePromptOptimizer(body.promptOptimizer) }),
     });
   });
 

@@ -359,6 +359,24 @@ textarea[aria-label="高级参数 JSON"] {
   resize: vertical;
 }
 
+/* Prompt 标签行：左侧标签 + 右侧 AI 优化/撤销按钮 */
+.prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prompt-head label {
+  margin-top: 6px;
+}
+
+.prompt-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--muted-ink);

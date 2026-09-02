@@ -232,15 +232,22 @@ export interface LogRow {
   errorMessage: string | null;
 }
 
+export interface PromptOptimizerSettings {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
+  promptOptimizer: PromptOptimizerSettings;
 }
 
 export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admin/settings");
 
-export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement">): Promise<AppSettings> =>
+export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement"> & { promptOptimizer?: PromptOptimizerSettings }): Promise<AppSettings> =>
   api<AppSettings>("/admin/settings", { method: "PUT", body: input });
 
 export interface Announcement {
@@ -252,9 +259,14 @@ export const fetchAnnouncement = (): Promise<Announcement> => api<Announcement>(
 
 export interface Features {
   upscale: boolean;
+  promptOptimizer: boolean;
 }
 
 export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/features");
+
+// 调用服务端用配置好的 AI 优化提示词，返回优化后的文本
+export const optimizePrompt = (prompt: string): Promise<{ prompt: string }> =>
+  api<{ prompt: string }>("/v1/prompt/optimize", { method: "POST", body: { prompt } });
 
 // ---- 生成 job ----
 

@@ -37,8 +37,18 @@ async function renderTab(): Promise<void> {
 
 describe("SettingsTab", () => {
   it("loads and saves edited settings", async () => {
-    apiMocks.fetchSettings.mockResolvedValue({ globalPrompt: "old", announcement: "notice", announcementVersion: 1 });
-    apiMocks.saveSettings.mockResolvedValue({ globalPrompt: "new", announcement: "notice", announcementVersion: 1 });
+    apiMocks.fetchSettings.mockResolvedValue({
+      globalPrompt: "old",
+      announcement: "notice",
+      announcementVersion: 1,
+      promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+    });
+    apiMocks.saveSettings.mockResolvedValue({
+      globalPrompt: "new",
+      announcement: "notice",
+      announcementVersion: 1,
+      promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+    });
     await renderTab();
 
     const prompt = container.querySelector<HTMLTextAreaElement>("#settings-global-prompt")!;
@@ -52,8 +62,50 @@ describe("SettingsTab", () => {
       await Promise.resolve();
     });
 
-    expect(apiMocks.saveSettings).toHaveBeenCalledWith({ globalPrompt: "new", announcement: "notice" });
+    expect(apiMocks.saveSettings).toHaveBeenCalledWith({
+      globalPrompt: "new",
+      announcement: "notice",
+      promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+    });
     expect(container.textContent).toContain("设置已保存");
+  });
+
+  it("edits and saves the prompt optimizer AI configuration", async () => {
+    apiMocks.fetchSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+    });
+    apiMocks.saveSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-2", model: "gpt-4o-mini" },
+    });
+    await renderTab();
+
+    const setInput = (id: string, value: string): void => {
+      const input = container.querySelector<HTMLInputElement>(id)!;
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setValue.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    await act(async () => {
+      setInput("#settings-ai-base-url", "https://api.test/v1");
+      setInput("#settings-ai-api-key", "sk-2");
+      setInput("#settings-ai-model", "gpt-4o-mini");
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.saveSettings).toHaveBeenCalledWith({
+      globalPrompt: "",
+      announcement: "",
+      promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-2", model: "gpt-4o-mini" },
+    });
   });
 
   it("keeps saving disabled after a load failure and retries safely", async () => {

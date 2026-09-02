@@ -27,7 +27,7 @@ describe("Playground result lightbox", () => {
       throw new Error(`unexpected API: ${path}`);
     });
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false });
     vi.spyOn(apiModule, "fetchMe").mockResolvedValue({
       role: "user",
       email: "user@example.test",

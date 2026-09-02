@@ -111,6 +111,7 @@ describe("application settings", () => {
       globalPrompt: "",
       announcement: "",
       announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
     });
   });
 
@@ -119,6 +120,7 @@ describe("application settings", () => {
       globalPrompt: "house style",
       announcement: "hello",
       announcementVersion: 1,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
     });
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "hello" }).announcementVersion).toBe(1);
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "changed" }).announcementVersion).toBe(2);
@@ -132,6 +134,7 @@ describe("application settings", () => {
       globalPrompt: "persistent style",
       announcement: "persistent notice",
       announcementVersion: 1,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
     });
   });
 });

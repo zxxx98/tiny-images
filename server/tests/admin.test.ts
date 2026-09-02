@@ -251,7 +251,7 @@ describe("/admin/logs", () => {
 describe("settings", () => {
   it("reads defaults and updates settings as admin", async () => {
     const initial = await app.inject({ url: "/admin/settings", headers: H });
-    expect(initial.json()).toEqual({ globalPrompt: "", announcement: "", announcementVersion: 0 });
+    expect(initial.json()).toEqual({ globalPrompt: "", announcement: "", announcementVersion: 0, promptOptimizer: { baseUrl: "", apiKey: "", model: "" } });
 
     const updated = await app.inject({
       method: "PUT",
@@ -260,7 +260,7 @@ describe("settings", () => {
       payload: { globalPrompt: "house style", announcement: "Maintenance tonight" },
     });
     expect(updated.statusCode).toBe(200);
-    expect(updated.json()).toEqual({ globalPrompt: "house style", announcement: "Maintenance tonight", announcementVersion: 1 });
+    expect(updated.json()).toEqual({ globalPrompt: "house style", announcement: "Maintenance tonight", announcementVersion: 1, promptOptimizer: { baseUrl: "", apiKey: "", model: "" } });
 
     const repeated = await app.inject({
       method: "PUT",

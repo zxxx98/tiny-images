@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, createUpscaleJob, fetchAnnouncement, fetchChannelHealth, fetchFeatures, fetchModelHealth, fetchSettings, saveSettings } from "./api";
+import { createEditJob, createUpscaleJob, fetchAnnouncement, fetchChannelHealth, fetchFeatures, fetchModelHealth, fetchSettings, optimizePrompt, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -50,18 +50,52 @@ describe("features API", () => {
   it("fetches authenticated frontend feature flags", async () => {
     vi.stubGlobal("localStorage", { getItem: () => "web-token" });
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ upscale: true }), {
+      new Response(JSON.stringify({ upscale: true, promptOptimizer: false }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchFeatures()).resolves.toEqual({ upscale: true });
+    await expect(fetchFeatures()).resolves.toEqual({ upscale: true, promptOptimizer: false });
     expect(fetchMock).toHaveBeenCalledWith(
       "/v1/features",
       expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
     );
+  });
+});
+
+describe("optimizePrompt", () => {
+  it("posts the prompt to the optimize endpoint and returns the rewritten text", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ prompt: "optimized" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(optimizePrompt("a cat")).resolves.toEqual({ prompt: "optimized" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/prompt/optimize",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ prompt: "a cat" }) }),
+    );
+  });
+
+  it("surfaces optimizer errors (e.g. 429 rate limit)", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => "web-token" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "提示词优化上游 rate limited" } }), {
+          status: 429,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(optimizePrompt("a cat")).rejects.toThrow("rate limited");
   });
 });
 

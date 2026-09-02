@@ -107,10 +107,18 @@ export interface UserRow {
   groupIds: number[];
 }
 
+// 提示词优化用的 OpenAI 兼容 chat 接口配置；baseUrl/model 任一为空视为未启用
+export interface PromptOptimizerSettings {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
+  promptOptimizer: PromptOptimizerSettings;
 }
 
 export class ConflictError extends Error {
@@ -166,13 +174,23 @@ export class Repo {
       globalPrompt: values.get("global_prompt") ?? "",
       announcement: values.get("announcement") ?? "",
       announcementVersion: Number(values.get("announcement_version") ?? "0"),
+      promptOptimizer: {
+        baseUrl: values.get("prompt_optimizer_base_url") ?? "",
+        apiKey: values.get("prompt_optimizer_api_key") ?? "",
+        model: values.get("prompt_optimizer_model") ?? "",
+      },
     };
   }
 
-  updateAppSettings(input: { globalPrompt: string; announcement: string }): AppSettings {
+  updateAppSettings(input: {
+    globalPrompt: string;
+    announcement: string;
+    promptOptimizer?: PromptOptimizerSettings;
+  }): AppSettings {
     const current = this.getAppSettings();
     const announcementVersion =
       current.announcement === input.announcement ? current.announcementVersion : current.announcementVersion + 1;
+    const optimizer = input.promptOptimizer ?? current.promptOptimizer;
     const put = this.db.prepare(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
@@ -181,6 +199,9 @@ export class Repo {
       put.run("global_prompt", input.globalPrompt);
       put.run("announcement", input.announcement);
       put.run("announcement_version", String(announcementVersion));
+      put.run("prompt_optimizer_base_url", optimizer.baseUrl);
+      put.run("prompt_optimizer_api_key", optimizer.apiKey);
+      put.run("prompt_optimizer_model", optimizer.model);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");

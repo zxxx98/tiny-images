@@ -9,6 +9,7 @@ import {
   fetchFeatures,
   fetchJob,
   notifyQuotaChanged,
+  optimizePrompt,
   ApiError,
   type Announcement,
   type JobKind,
@@ -146,6 +147,10 @@ export default function Playground() {
   const [editPreviews, setEditPreviews] = useState<string[]>([]);
   const [upscaleEnabled, setUpscaleEnabled] = useState(false);
   const [featuresLoaded, setFeaturesLoaded] = useState(false);
+  const [optimizerEnabled, setOptimizerEnabled] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  // 优化前的提示词，用于「撤销」；手动编辑或再次撤销后清空
+  const [undoPrompt, setUndoPrompt] = useState<string | null>(null);
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
   const [upscaleScale, setUpscaleScale] = useState<2 | 4>(2);
@@ -179,8 +184,14 @@ export default function Playground() {
 
   useEffect(() => {
     fetchFeatures()
-      .then((features) => setUpscaleEnabled(features.upscale === true))
-      .catch(() => setUpscaleEnabled(false))
+      .then((features) => {
+        setUpscaleEnabled(features.upscale === true);
+        setOptimizerEnabled(features.promptOptimizer === true);
+      })
+      .catch(() => {
+        setUpscaleEnabled(false);
+        setOptimizerEnabled(false);
+      })
       .finally(() => setFeaturesLoaded(true));
   }, []);
 
@@ -505,6 +516,30 @@ export default function Playground() {
     }
   };
 
+  // 用管理后台配置的 AI 改写当前提示词；成功后可直接「撤销」回到改写前
+  const optimize = async (): Promise<void> => {
+    if (optimizing || !prompt.trim()) return;
+    setOptimizing(true);
+    setError(null);
+    try {
+      const { prompt: optimized } = await optimizePrompt(prompt);
+      if (!optimized.trim()) throw new Error("优化结果为空");
+      setUndoPrompt(prompt);
+      setPrompt(optimized);
+    } catch (err) {
+      setError(`AI 优化失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  const undoOptimize = (): void => {
+    if (undoPrompt === null) return;
+    setPrompt(undoPrompt);
+    setUndoPrompt(null);
+    setError(null);
+  };
+
   const acknowledgeAnnouncement = (): void => {
     if (!announcement) return;
     persistAnnouncementAcknowledgement(announcement);
@@ -586,12 +621,35 @@ export default function Playground() {
                   ))}
                 </select>
               )}
-              <label htmlFor="pg-prompt">Prompt（Ctrl+Enter 生成）</label>
+              <div className="prompt-head">
+                <label htmlFor="pg-prompt">Prompt（Ctrl+Enter 生成）</label>
+                {optimizerEnabled && (
+                  <span className="prompt-actions">
+                    {undoPrompt !== null && (
+                      <button className="btn small" type="button" onClick={undoOptimize} disabled={optimizing}>
+                        撤销优化
+                      </button>
+                    )}
+                    <button
+                      className="btn small"
+                      type="button"
+                      title="用 AI 改写当前提示词"
+                      onClick={() => void optimize()}
+                      disabled={optimizing || running || !prompt.trim()}
+                    >
+                      {optimizing ? "优化中…" : "AI 优化"}
+                    </button>
+                  </span>
+                )}
+              </div>
               <textarea
                 id="pg-prompt"
                 rows={4}
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => {
+                  setPrompt(e.target.value);
+                  if (undoPrompt !== null) setUndoPrompt(null);
+                }}
                 onKeyDown={quickSubmit}
                 placeholder={mode === "edit" ? "描述要如何修改上传的图片…" : "描述你想生成的图片…"}
                 required

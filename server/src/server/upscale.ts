@@ -176,7 +176,13 @@ async function runUpscaleJob(
 }
 
 export function registerUpscale(ctx: AppContext): void {
-  ctx.app.get("/v1/features", async () => ({ upscale: config(ctx).enabled }));
+  ctx.app.get("/v1/features", async () => {
+    const optimizer = ctx.deps.repo.getAppSettings().promptOptimizer;
+    return {
+      upscale: config(ctx).enabled,
+      promptOptimizer: !!optimizer.baseUrl && !!optimizer.model,
+    };
+  });
 
   ctx.app.post("/v1/images/upscale-jobs", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const cf = config(ctx);

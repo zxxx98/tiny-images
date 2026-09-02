@@ -94,7 +94,7 @@ async function waitJob(jobId: string): Promise<Record<string, unknown>> {
 describe("Cloudflare upscale API", () => {
   it("exposes the feature flag and returns the configured disabled error", async () => {
     await start({ ...cf, enabled: false, baseUrl: null });
-    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false });
+    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: false });
     const res = await formRequest([await source()]);
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toEqual({

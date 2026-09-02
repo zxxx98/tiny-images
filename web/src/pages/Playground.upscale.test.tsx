@@ -33,7 +33,7 @@ describe("Playground upscale mode", () => {
       throw new Error(`unexpected API: ${path}`);
     });
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: true });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: true, promptOptimizer: false });
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => `blob:preview-${++objectUrl}`) });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
     Object.defineProperty(window, "scrollTo", { configurable: true, value: vi.fn() });
@@ -46,7 +46,7 @@ describe("Playground upscale mode", () => {
   });
 
   it("feature-gates the third top-level mode", async () => {
-    vi.mocked(apiModule.fetchFeatures).mockResolvedValueOnce({ upscale: false });
+    vi.mocked(apiModule.fetchFeatures).mockResolvedValueOnce({ upscale: false, promptOptimizer: false });
 
     await act(async () => {
       root.render(<MemoryRouter><Playground /></MemoryRouter>);

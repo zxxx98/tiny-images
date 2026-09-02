@@ -1,9 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import { fetchSettings, saveSettings } from "../../api";
+import { fetchSettings, saveSettings, type PromptOptimizerSettings } from "../../api";
+
+const EMPTY_OPTIMIZER: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
 
 export default function SettingsTab() {
   const [globalPrompt, setGlobalPrompt] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [optimizer, setOptimizer] = useState<PromptOptimizerSettings>(EMPTY_OPTIMIZER);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -18,6 +21,7 @@ export default function SettingsTab() {
       .then((settings) => {
         setGlobalPrompt(settings.globalPrompt);
         setAnnouncement(settings.announcement);
+        setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
         setLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -37,9 +41,10 @@ export default function SettingsTab() {
     setMessage(null);
     setError(null);
     try {
-      const settings = await saveSettings({ globalPrompt, announcement });
+      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer });
       setGlobalPrompt(settings.globalPrompt);
       setAnnouncement(settings.announcement);
+      setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
       setMessage("设置已保存");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -79,6 +84,40 @@ export default function SettingsTab() {
           onChange={(event) => setAnnouncement(event.target.value)}
         />
         <p className="muted">仅在 Playground 自动弹出；留空则不展示。</p>
+
+        <h3>AI 提示词优化</h3>
+        <label htmlFor="settings-ai-base-url">AI 接口地址（OpenAI 兼容 chat 接口）</label>
+        <input
+          id="settings-ai-base-url"
+          type="text"
+          value={optimizer.baseUrl}
+          disabled={!loaded || saving}
+          onChange={(event) => setOptimizer((cur) => ({ ...cur, baseUrl: event.target.value }))}
+          placeholder="https://api.openai.com/v1"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-ai-api-key">API Key</label>
+        <input
+          id="settings-ai-api-key"
+          type="password"
+          value={optimizer.apiKey}
+          disabled={!loaded || saving}
+          onChange={(event) => setOptimizer((cur) => ({ ...cur, apiKey: event.target.value }))}
+          placeholder="sk-…"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-ai-model">模型</label>
+        <input
+          id="settings-ai-model"
+          type="text"
+          value={optimizer.model}
+          disabled={!loaded || saving}
+          onChange={(event) => setOptimizer((cur) => ({ ...cur, model: event.target.value }))}
+          placeholder="gpt-4o-mini"
+          spellCheck={false}
+        />
+        <p className="muted">配置后 Playground 的 Prompt 输入框会出现「AI 优化」按钮；接口地址与模型任一留空则不启用。</p>
 
         <button className="btn primary" type="submit" disabled={!loaded || saving}>
           {saving ? "保存中…" : "保存设置"}
