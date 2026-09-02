@@ -34,9 +34,21 @@ describe("conformImages", () => {
       dataDir: dir,
       fileBaseUrl: base,
       fetchTimeoutMs: 5000,
+      allowPrivateNetwork: true,
     });
     expect(out[0].b64).toBe(PNG_B64);
     expect(out[1].b64).toBe(PNG_B64);
+  });
+  it("rejects private generated-image URLs before fetching by default", async () => {
+    await expect(
+      conformImages({
+        images: [{ url: "http://127.0.0.1/private.png" }],
+        wanted: "b64_json",
+        dataDir: dir,
+        fileBaseUrl: "https://tiny.test",
+        fetchTimeoutMs: 1000,
+      }),
+    ).rejects.toMatchObject({ type: "upstream_error", message: "generated image URL is not publicly routable" });
   });
   it("keeps url when wanted, saves b64 to file when needed", async () => {
     const base = await start();
@@ -88,7 +100,7 @@ describe("localizeImage", () => {
 
     upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(source));
     const b = await start();
-    const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000);
+    const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000, true);
     expect(fromUrl?.file).toMatch(/\.png$/);
     expect(fromUrl).toMatchObject({ width: 2, height: 3 });
 
