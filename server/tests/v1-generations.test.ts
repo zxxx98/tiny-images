@@ -30,9 +30,9 @@ afterEach(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-async function start(): Promise<void> {
+async function start(generationMode: "images" | "chat" = "images"): Promise<void> {
   await upstream.listen({ port: 0, host: "127.0.0.1" });
-  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1` });
+  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`, generationMode });
   repo.createKey(c.id, "sk-upstream");
   repo.createModel({ publicName: "img-1", channelId: c.id, upstreamName: "gpt-image-1" });
   const provider = new OpenAICompatProvider();
@@ -52,6 +52,24 @@ async function start(): Promise<void> {
 }
 
 describe("POST /v1/images/generations", () => {
+  it("uses a chat-only upstream but returns the Images API shape", async () => {
+    let body: Record<string, unknown> = {};
+    upstream.post("/v1/chat/completions", async (req, reply) => {
+      body = req.body as Record<string, unknown>;
+      return reply.send({
+        created: 42,
+        choices: [{ message: { content: "done", images: [{ type: "image_url", image_url: { url: `data:image/png;base64,${PNG_B64}` } }] } }],
+      });
+    });
+    await start("chat");
+
+    const res = await app.inject({ method: "POST", url: "/v1/images/generations", payload: { model: "img-1", prompt: "cat" } });
+
+    expect(body).toMatchObject({ model: "gpt-image-1", messages: [{ role: "user", content: "cat" }], modalities: ["text", "image"] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ created: 42, data: [{ b64_json: PNG_B64 }] });
+  });
+
   it("returns openai shape with b64 and logs ok", async () => {
     upstream.post("/v1/images/generations", async (_req, reply) =>
       reply.send({ created: 42, data: [{ b64_json: PNG_B64, revised_prompt: "rev" }], usage: { total: 1 } }),

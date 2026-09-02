@@ -1,5 +1,6 @@
 export type EditMode = "auto" | "multipart" | "json-base64";
 export type ChannelType = "openai-compat" | "ai-horde";
+export type GenerationMode = "images" | "chat";
 
 export interface ChannelConfig {
   id: number;
@@ -8,6 +9,7 @@ export interface ChannelConfig {
   baseUrl: string;
   timeoutMs: number;
   concurrency: number;
+  generationMode: GenerationMode;
   editMode: EditMode;
   extraHeaders: Record<string, string>;
   enabled: boolean;

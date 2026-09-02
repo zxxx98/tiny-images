@@ -126,6 +126,9 @@ const MIGRATIONS: string[] = [
   ALTER TABLE users ADD COLUMN allow_nsfw INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE models ADD COLUMN supports_nsfw INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  ALTER TABLE channels ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'images';
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

@@ -24,6 +24,7 @@ describe("channels", () => {
     expect(c.enabled).toBe(true);
     expect(c.timeoutMs).toBe(120000);
     expect(c.concurrency).toBe(2);
+    expect(c.generationMode).toBe("images");
     expect(() => repo.createChannel({ name: "a", baseUrl: "https://y/v1" })).toThrow(ConflictError);
   });
   it("updates and deletes", () => {
@@ -43,6 +44,11 @@ describe("channels", () => {
     const c = repo.createChannel({ name: "limited", baseUrl: "https://x/v1", concurrency: 4 });
     expect(c.concurrency).toBe(4);
     expect(repo.updateChannel(c.id, { concurrency: 7 })?.concurrency).toBe(7);
+  });
+  it("persists channel generation mode on create and update", () => {
+    const c = repo.createChannel({ name: "chat", baseUrl: "https://upstream.test/v1", generationMode: "chat" });
+    expect(c.generationMode).toBe("chat");
+    expect(repo.updateChannel(c.id, { generationMode: "images" })?.generationMode).toBe("images");
   });
 });
 

@@ -73,24 +73,26 @@ async function createChannel(name = "c1"): Promise<number> {
 }
 
 describe("/admin/channels", () => {
-  it("creates, updates, and validates channel type", async () => {
+  it("creates, updates, and validates channel type and generation mode", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/admin/channels",
       headers: H,
-      payload: { name: "typed-horde", type: "ai-horde", baseUrl: "https://aihorde.net/api/v2" },
+      payload: { name: "typed-horde", type: "ai-horde", generationMode: "chat", baseUrl: "https://aihorde.net/api/v2" },
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().type).toBe("ai-horde");
+    expect(created.json().generationMode).toBe("chat");
     expect(created.json().concurrency).toBe(2);
 
     const patched = await app.inject({
       method: "PATCH",
       url: `/admin/channels/${created.json().id}`,
       headers: H,
-      payload: { type: "openai-compat", concurrency: 4 },
+      payload: { type: "openai-compat", generationMode: "images", concurrency: 4 },
     });
     expect(patched.json().type).toBe("openai-compat");
+    expect(patched.json().generationMode).toBe("images");
     expect(patched.json().concurrency).toBe(4);
 
     const invalid = await app.inject({
@@ -101,6 +103,15 @@ describe("/admin/channels", () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.message).toContain("'type'");
+
+    const invalidGenerationMode = await app.inject({
+      method: "PATCH",
+      url: `/admin/channels/${created.json().id}`,
+      headers: H,
+      payload: { generationMode: "video" },
+    });
+    expect(invalidGenerationMode.statusCode).toBe(400);
+    expect(invalidGenerationMode.json().error.message).toContain("'generationMode'");
 
     for (const concurrency of [0, 1.5, "2"]) {
       const badConcurrency = await app.inject({
