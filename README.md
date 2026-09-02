@@ -14,6 +14,7 @@
 - **b64 ↔ url 自动转换**：客户端要的格式与上游返回的不一致时自动转换（b64→url 落盘缓存 24h）
 - **统一错误格式**：所有错误均为 OpenAI 结构 `{"error":{"message","type","code"}}`
 - **WebUI**：Playground + 管理后台（React），由服务端同端口托管
+- **提示词收藏夹**：Playground 里可把当前提示词加入收藏夹（按账号隔离，每账号上限 200 条），点击条目一键填回输入框
 - **AI 提示词优化与翻译**：管理员在设置中配置 OpenAI 兼容 chat 接口后，Playground 一键用 AI 改写提示词或中英互译（方向自动判断，可撤销；上游 429/5xx 自动重试）
 - **鉴权**：对外 API 用 `sk-tiny-` 前缀 key（未配置任何 key 时不鉴权）；Web 登录用邮箱+密码（admin / 普通用户角色，普通用户可配置额度与可用渠道分组）
 - **持久化**：SQLite（Node 内置 `node:sqlite`，无原生编译依赖），配置即数据、改完即生效
@@ -72,6 +73,8 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 ### AI 提示词优化
 
 管理员在「管理后台 → 设置 → AI 提示词优化」配置一个 OpenAI 兼容 chat 接口（接口地址、API Key、模型，如 `https://api.openai.com/v1` + `gpt-4o-mini`）。配置保存后，Playground 的 Prompt 输入框会出现「AI 优化」按钮：点击即由该模型把当前提示词改写为更适合生图的版本，自动写回输入框；旁边还有「翻译」按钮，在中文与英文之间互译（方向按提示词语言自动判断，也可在请求中显式指定）。两者共用同一撤销入口；文本生图与图片编辑模式都可用。接口地址与模型任一留空则不启用，按钮随之隐藏。
+
+收藏夹接口为 `GET/POST /v1/prompt-favorites` 与 `DELETE /v1/prompt-favorites/:id`（登录用户可用，数据按账号隔离）。
 
 对应接口为 `POST /v1/prompt/optimize` 与 `POST /v1/prompt/translate`（登录用户可用）。优化接口请求体 `{"prompt":"…"}`，返回 `{"prompt":"优化后提示词"}`；翻译接口请求体 `{"prompt":"…","target":"en|zh"}`（`target` 可省略，由服务端按语言自动判断），返回 `{"prompt":"译文","target":"en"}`。上游 429/5xx/网络错误会自动重试（最多 3 次，遵循 `Retry-After`），重试耗尽后返回标准 OpenAI 错误格式。
 

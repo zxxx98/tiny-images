@@ -1,11 +1,14 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
+  addFavorite,
   api,
   createEditJob,
   createJob,
   createUpscaleJob,
+  deleteFavorite,
   fetchAnnouncement,
+  fetchFavorites,
   fetchFeatures,
   fetchJob,
   notifyQuotaChanged,
@@ -14,6 +17,7 @@ import {
   ApiError,
   type Announcement,
   type JobKind,
+  type PromptFavorite,
 } from "../api";
 import AnnouncementDialog, {
   ANNOUNCEMENT_ACK_KEY,
@@ -153,6 +157,8 @@ export default function Playground() {
   const [translating, setTranslating] = useState(false);
   // 优化/翻译前的提示词，用于「撤销」；手动编辑或再次撤销后清空
   const [undoPrompt, setUndoPrompt] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<PromptFavorite[]>([]);
+  const [favoriting, setFavoriting] = useState(false);
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
   const [upscaleScale, setUpscaleScale] = useState<2 | 4>(2);
@@ -204,6 +210,14 @@ export default function Playground() {
       })
       .catch(() => undefined);
   }, []);
+
+  const reloadFavorites = (): void => {
+    fetchFavorites()
+      .then((rows) => setFavorites(rows))
+      .catch(() => setFavorites([]));
+  };
+
+  useEffect(reloadFavorites, []);
 
   // 恢复草稿、历史页带入参数，以及未完成的 job。运行任务的新格式包含 kind，旧裸 id 仍可恢复。
   useEffect(() => {
@@ -559,6 +573,29 @@ export default function Playground() {
     setError(null);
   };
 
+  const favorite = async (): Promise<void> => {
+    if (favoriting || !prompt.trim()) return;
+    setFavoriting(true);
+    setError(null);
+    try {
+      await addFavorite(prompt.trim());
+      reloadFavorites();
+    } catch (err) {
+      setError(`收藏失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setFavoriting(false);
+    }
+  };
+
+  const removeFavorite = async (id: number): Promise<void> => {
+    try {
+      await deleteFavorite(id);
+      reloadFavorites();
+    } catch (err) {
+      setError(`删除收藏失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const acknowledgeAnnouncement = (): void => {
     if (!announcement) return;
     persistAnnouncementAcknowledgement(announcement);
@@ -642,33 +679,44 @@ export default function Playground() {
               )}
               <div className="prompt-head">
                 <label htmlFor="pg-prompt">Prompt（Ctrl+Enter 生成）</label>
-                {optimizerEnabled && (
-                  <span className="prompt-actions">
-                    {undoPrompt !== null && (
-                      <button className="btn small" type="button" onClick={undoEdit} disabled={optimizing || translating}>
-                        撤销
+                <span className="prompt-actions">
+                  {undoPrompt !== null && (
+                    <button className="btn small" type="button" onClick={undoEdit} disabled={optimizing || translating}>
+                      撤销
+                    </button>
+                  )}
+                  <button
+                    className="btn small"
+                    type="button"
+                    title="把当前提示词加入收藏夹"
+                    onClick={() => void favorite()}
+                    disabled={favoriting || running || !prompt.trim()}
+                  >
+                    {favoriting ? "收藏中…" : "收藏"}
+                  </button>
+                  {optimizerEnabled && (
+                    <>
+                      <button
+                        className="btn small"
+                        type="button"
+                        title="在中英之间翻译当前提示词（方向自动判断）"
+                        onClick={() => void translate()}
+                        disabled={optimizing || translating || running || !prompt.trim()}
+                      >
+                        {translating ? "翻译中…" : "翻译"}
                       </button>
-                    )}
-                    <button
-                      className="btn small"
-                      type="button"
-                      title="在中英之间翻译当前提示词（方向自动判断）"
-                      onClick={() => void translate()}
-                      disabled={optimizing || translating || running || !prompt.trim()}
-                    >
-                      {translating ? "翻译中…" : "翻译"}
-                    </button>
-                    <button
-                      className="btn small"
-                      type="button"
-                      title="用 AI 改写当前提示词"
-                      onClick={() => void optimize()}
-                      disabled={optimizing || translating || running || !prompt.trim()}
-                    >
-                      {optimizing ? "优化中…" : "AI 优化"}
-                    </button>
-                  </span>
-                )}
+                      <button
+                        className="btn small"
+                        type="button"
+                        title="用 AI 改写当前提示词"
+                        onClick={() => void optimize()}
+                        disabled={optimizing || translating || running || !prompt.trim()}
+                      >
+                        {optimizing ? "优化中…" : "AI 优化"}
+                      </button>
+                    </>
+                  )}
+                </span>
               </div>
               <textarea
                 id="pg-prompt"
@@ -682,6 +730,33 @@ export default function Playground() {
                 placeholder={mode === "edit" ? "描述要如何修改上传的图片…" : "描述你想生成的图片…"}
                 required
               />
+              <details className="favorites">
+                <summary className="muted">收藏夹（{favorites.length}）</summary>
+                {favorites.length === 0 ? (
+                  <p className="muted">还没有收藏的提示词。输入提示词后点「收藏」即可保存，点击条目可填入输入框。</p>
+                ) : (
+                  <ul className="favorite-list">
+                    {favorites.map((f) => (
+                      <li key={f.id}>
+                        <button
+                          type="button"
+                          className="favorite-content"
+                          title="点击填入输入框"
+                          onClick={() => {
+                            setPrompt(f.content);
+                            if (undoPrompt !== null) setUndoPrompt(null);
+                          }}
+                        >
+                          {f.content}
+                        </button>
+                        <button type="button" className="link danger" onClick={() => void removeFavorite(f.id)}>
+                          删除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </details>
               {mode === "edit" && (
                 <>
                   <EditImageInput files={editFiles} previews={editPreviews} onChange={setEditFiles} />

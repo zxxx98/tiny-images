@@ -19,6 +19,7 @@ import { registerFiles } from "./server/files.js";
 import type { JobManager } from "./server/jobs.js";
 import { registerSettings } from "./server/settings.js";
 import { registerPromptOptimizer } from "./server/promptOptimizer.js";
+import { registerPromptFavorites } from "./server/favorites.js";
 
 export interface AppDeps {
   env: Env;
@@ -82,6 +83,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerAdmin(ctx);
   registerSettings(ctx);
   registerPromptOptimizer(ctx);
+  registerPromptFavorites(ctx);
   registerFiles(ctx);
 
   app.setErrorHandler((err, _req, reply) => {

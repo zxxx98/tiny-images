@@ -129,6 +129,15 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE channels ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'images';
   `,
+  `
+  CREATE TABLE IF NOT EXISTS prompt_favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS prompt_favorites_user ON prompt_favorites(user_id, id DESC);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

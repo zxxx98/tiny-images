@@ -107,6 +107,13 @@ export interface UserRow {
   groupIds: number[];
 }
 
+export interface PromptFavoriteRow {
+  id: number;
+  userId: number;
+  content: string;
+  createdAt: number;
+}
+
 // 提示词优化用的 OpenAI 兼容 chat 接口配置；baseUrl/model 任一为空视为未启用
 export interface PromptOptimizerSettings {
   baseUrl: string;
@@ -141,6 +148,7 @@ export interface ChannelInput {
 }
 
 const LOG_KEEP = 50;
+const FAVORITES_KEEP_PER_USER = 200;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export function quotaDayAt(timestamp: number): string {
@@ -626,6 +634,48 @@ export class Repo {
       latencyMs: r.latency_ms === null ? null : Number(r.latency_ms),
       errorMessage: r.error_message === null ? null : String(r.error_message),
       images: String(r.images),
+    };
+  }
+
+  // ---- prompt favorites（提示词收藏夹）----
+
+  insertPromptFavorite(userId: number, content: string): PromptFavoriteRow {
+    const res = this.db
+      .prepare("INSERT INTO prompt_favorites (user_id, content, created_at) VALUES (?, ?, ?)")
+      .run(userId, content, Date.now());
+    this.db
+      .prepare(
+        `DELETE FROM prompt_favorites WHERE user_id = ? AND id NOT IN (
+           SELECT id FROM prompt_favorites WHERE user_id = ? ORDER BY id DESC LIMIT ${FAVORITES_KEEP_PER_USER}
+         )`,
+      )
+      .run(userId, userId);
+    return this.getPromptFavorite(Number(res.lastInsertRowid))!;
+  }
+
+  getPromptFavorite(id: number): PromptFavoriteRow | null {
+    const row = this.db.prepare("SELECT * FROM prompt_favorites WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toPromptFavorite(row) : null;
+  }
+
+  listPromptFavorites(userId: number): PromptFavoriteRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM prompt_favorites WHERE user_id = ? ORDER BY id DESC")
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.toPromptFavorite(r));
+  }
+
+  deletePromptFavorite(id: number, userId: number): boolean {
+    const res = this.db.prepare("DELETE FROM prompt_favorites WHERE id = ? AND user_id = ?").run(id, userId);
+    return Number(res.changes) > 0;
+  }
+
+  private toPromptFavorite(row: Record<string, unknown>): PromptFavoriteRow {
+    return {
+      id: Number(row.id),
+      userId: Number(row.user_id),
+      content: String(row.content),
+      createdAt: Number(row.created_at),
     };
   }
 
