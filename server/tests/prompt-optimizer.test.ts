@@ -8,7 +8,7 @@ import { Executor } from "../src/core/executor.js";
 import { KeyPool } from "../src/core/keyPool.js";
 import { ModelRouter } from "../src/core/router.js";
 import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
-import { extractOptimizedContent, OPTIMIZE_SYSTEM_PROMPT } from "../src/core/promptOptimizer.js";
+import { extractOptimizedContent, OPTIMIZE_SYSTEM_PROMPT, detectPromptTarget } from "../src/core/promptOptimizer.js";
 import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
 import { hashPassword } from "../src/core/password.js";
@@ -203,6 +203,69 @@ describe("POST /v1/prompt/optimize", () => {
     expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: false });
     await configureOptimizer();
     expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: true });
+  });
+});
+
+describe("POST /v1/prompt/translate", () => {
+  it("requires authentication", async () => {
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", payload: { prompt: "a cat" } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("translates a Chinese prompt to English by auto-detection", async () => {
+    await configureOptimizer();
+    let received: unknown;
+    chatHandler = async (req, reply) => {
+      received = req.body;
+      reply.code(200).send({ choices: [{ message: { content: "an orange cat sunbathing on the windowsill" } }] });
+    };
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", headers: H, payload: { prompt: "一只橘猫在窗台晒太阳" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ prompt: "an orange cat sunbathing on the windowsill", target: "en" });
+    const body = received as { messages: { role: string; content: string }[] };
+    expect(body.messages[0].content).toContain("英文");
+    expect(body.messages[1]).toEqual({ role: "user", content: "一只橘猫在窗台晒太阳" });
+  });
+
+  it("translates an English prompt to Chinese by auto-detection", async () => {
+    await configureOptimizer();
+    chatHandler = async (_req, reply) => {
+      reply.code(200).send({ choices: [{ message: { content: "一只在草地上奔跑的柯基犬" } }] });
+    };
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", headers: H, payload: { prompt: "a corgi running on the grass" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ prompt: "一只在草地上奔跑的柯基犬", target: "zh" });
+  });
+
+  it("honors an explicit target override", async () => {
+    await configureOptimizer();
+    chatHandler = async (_req, reply) => {
+      reply.code(200).send({ choices: [{ message: { content: "a cat" } }] });
+    };
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", headers: H, payload: { prompt: "一只猫", target: "en" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().target).toBe("en");
+  });
+
+  it("rejects an unknown target", async () => {
+    await configureOptimizer();
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", headers: H, payload: { prompt: "a cat", target: "fr" } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("fails with a hint when not configured", async () => {
+    const res = await app.inject({ method: "POST", url: "/v1/prompt/translate", headers: H, payload: { prompt: "a cat" } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain("提示词翻译未配置");
+  });
+});
+
+describe("detectPromptTarget", () => {
+  it("routes CJK prompts to English and latin prompts to Chinese", () => {
+    expect(detectPromptTarget("一只橘猫")).toBe("en");
+    expect(detectPromptTarget("ネオンの夜、雨の街")).toBe("en");
+    expect(detectPromptTarget("a rainy neon street at night")).toBe("zh");
+    expect(detectPromptTarget("photo, 4k, cinematic")).toBe("zh");
   });
 });
 

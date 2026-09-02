@@ -268,6 +268,25 @@ export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/feature
 export const optimizePrompt = (prompt: string): Promise<{ prompt: string }> =>
   api<{ prompt: string }>("/v1/prompt/optimize", { method: "POST", body: { prompt } });
 
+// AI 翻译提示词：缺省 target 由服务端按语言自动判断
+export const translatePrompt = (prompt: string, target?: "en" | "zh"): Promise<{ prompt: string; target: "en" | "zh" }> =>
+  api<{ prompt: string; target: "en" | "zh" }>("/v1/prompt/translate", { method: "POST", body: { prompt, ...(target ? { target } : {}) } });
+
+// ---- 提示词收藏夹 ----
+
+export interface PromptFavorite {
+  id: number;
+  content: string;
+  createdAt: number;
+}
+
+export const fetchFavorites = (): Promise<PromptFavorite[]> => api<PromptFavorite[]>("/v1/prompt-favorites");
+
+export const addFavorite = (prompt: string): Promise<PromptFavorite> =>
+  api<PromptFavorite>("/v1/prompt-favorites", { method: "POST", body: { prompt } });
+
+export const deleteFavorite = (id: number): Promise<void> => api<void>(`/v1/prompt-favorites/${id}`, { method: "DELETE" });
+
 // ---- 生成 job ----
 
 export interface JobImage {

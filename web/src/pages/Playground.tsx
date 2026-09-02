@@ -10,6 +10,7 @@ import {
   fetchJob,
   notifyQuotaChanged,
   optimizePrompt,
+  translatePrompt,
   ApiError,
   type Announcement,
   type JobKind,
@@ -149,7 +150,8 @@ export default function Playground() {
   const [featuresLoaded, setFeaturesLoaded] = useState(false);
   const [optimizerEnabled, setOptimizerEnabled] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
-  // 优化前的提示词，用于「撤销」；手动编辑或再次撤销后清空
+  const [translating, setTranslating] = useState(false);
+  // 优化/翻译前的提示词，用于「撤销」；手动编辑或再次撤销后清空
   const [undoPrompt, setUndoPrompt] = useState<string | null>(null);
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
@@ -533,7 +535,24 @@ export default function Playground() {
     }
   };
 
-  const undoOptimize = (): void => {
+  // 中英互译：方向由服务端按提示词语言自动判断
+  const translate = async (): Promise<void> => {
+    if (translating || !prompt.trim()) return;
+    setTranslating(true);
+    setError(null);
+    try {
+      const { prompt: translated } = await translatePrompt(prompt);
+      if (!translated.trim()) throw new Error("翻译结果为空");
+      setUndoPrompt(prompt);
+      setPrompt(translated);
+    } catch (err) {
+      setError(`AI 翻译失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const undoEdit = (): void => {
     if (undoPrompt === null) return;
     setPrompt(undoPrompt);
     setUndoPrompt(null);
@@ -626,16 +645,25 @@ export default function Playground() {
                 {optimizerEnabled && (
                   <span className="prompt-actions">
                     {undoPrompt !== null && (
-                      <button className="btn small" type="button" onClick={undoOptimize} disabled={optimizing}>
-                        撤销优化
+                      <button className="btn small" type="button" onClick={undoEdit} disabled={optimizing || translating}>
+                        撤销
                       </button>
                     )}
                     <button
                       className="btn small"
                       type="button"
+                      title="在中英之间翻译当前提示词（方向自动判断）"
+                      onClick={() => void translate()}
+                      disabled={optimizing || translating || running || !prompt.trim()}
+                    >
+                      {translating ? "翻译中…" : "翻译"}
+                    </button>
+                    <button
+                      className="btn small"
+                      type="button"
                       title="用 AI 改写当前提示词"
                       onClick={() => void optimize()}
-                      disabled={optimizing || running || !prompt.trim()}
+                      disabled={optimizing || translating || running || !prompt.trim()}
                     >
                       {optimizing ? "优化中…" : "AI 优化"}
                     </button>

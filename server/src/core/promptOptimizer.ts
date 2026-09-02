@@ -34,6 +34,32 @@ interface OptimizeOptions {
   attempts?: number;
 }
 
+export type PromptTranslateTarget = "en" | "zh";
+
+// 含 CJK 字符（中日韩）视为需要译成英文，否则译成中文
+export function detectPromptTarget(prompt: string): PromptTranslateTarget {
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(prompt) ? "en" : "zh";
+}
+
+function translateSystemPrompt(target: PromptTranslateTarget): string {
+  if (target === "en") {
+    return [
+      "你是一位专业的生图提示词翻译助手。",
+      "请把用户给出的提示词准确翻译成适合 AI 绘图模型的英文描述：",
+      "- 保留核心意图与细节，不增删内容；",
+      "- 通用名词翻译为常见英文生图词汇；专有名词可保留原文；",
+      "- 只输出译文本身，不要任何解释、引号或前后缀。",
+    ].join("\n");
+  }
+  return [
+    "你是一位专业的生图提示词翻译助手。",
+    "请把用户给出的提示词准确翻译成简体中文：",
+    "- 保留核心意图与细节，不增删内容；",
+    "- 专有名词可保留原文；",
+    "- 只输出译文本身，不要任何解释、引号或前后缀。",
+  ].join("\n");
+}
+
 function retryDelayMs(response: Response | null, attempt: number): number {
   const retryAfter = response?.headers.get("retry-after");
   if (retryAfter) {
@@ -59,20 +85,32 @@ export function extractOptimizedContent(body: unknown): string {
   return text;
 }
 
-export async function optimizePrompt(options: OptimizeOptions): Promise<string> {
-  const { config, prompt } = options;
+interface ChatCallOptions {
+  config: PromptOptimizerSettings;
+  system: string;
+  user: string;
+  label: string;
+  temperature: number;
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  attempts?: number;
+}
+
+// 优化与翻译共用的一条 chat 调用：429/5xx/网络错误按退避重试，返回纯文本内容
+async function callChatCompletion(options: ChatCallOptions): Promise<string> {
+  const { config, label } = options;
   const doFetch = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const attempts = options.attempts ?? ATTEMPTS;
-  if (!config.baseUrl || !config.model) throw httpError(400, "提示词优化未配置：请在管理后台 → 设置中填写 AI 接口地址与模型");
+  if (!config.baseUrl || !config.model) throw httpError(400, `提示词${label}未配置：请在管理后台 → 设置中填写 AI 接口地址与模型`);
 
   const payload = {
     model: config.model,
     messages: [
-      { role: "system", content: OPTIMIZE_SYSTEM_PROMPT },
-      { role: "user", content: prompt },
+      { role: "system", content: options.system },
+      { role: "user", content: options.user },
     ],
-    temperature: 0.7,
+    temperature: options.temperature,
   };
 
   let lastError: unknown = null;
@@ -97,18 +135,18 @@ export async function optimizePrompt(options: OptimizeOptions): Promise<string> 
       if (res.ok) return extractOptimizedContent(body);
       // 429 与 5xx 视为可重试；其他 4xx（如 key 无效）直接失败
       if (res.status === 429 || res.status >= 500) {
-        lastError = mapUpstreamFailure(res.status, body, "提示词优化");
+        lastError = mapUpstreamFailure(res.status, body, label);
         if (attempt < attempts - 1) {
           await sleep(retryDelayMs(res, attempt));
           continue;
         }
         throw lastError;
       }
-      throw mapUpstreamFailure(res.status, body, "提示词优化");
+      throw mapUpstreamFailure(res.status, body, label);
     } catch (err) {
       if (err instanceof UpstreamError) throw err;
       // 网络/超时错误：同样按可重试处理
-      lastError = wrapNetworkError(err, "提示词优化");
+      lastError = wrapNetworkError(err, label);
       if (attempt < attempts - 1) {
         await sleep(retryDelayMs(null, attempt));
         continue;
@@ -116,5 +154,43 @@ export async function optimizePrompt(options: OptimizeOptions): Promise<string> 
       throw lastError;
     }
   }
-  throw lastError ?? new UpstreamError(502, "upstream_error", "提示词优化失败");
+  throw lastError ?? new UpstreamError(502, "upstream_error", `提示词${label}失败`);
+}
+
+export async function optimizePrompt(options: OptimizeOptions): Promise<string> {
+  return callChatCompletion({
+    config: options.config,
+    system: OPTIMIZE_SYSTEM_PROMPT,
+    user: options.prompt,
+    label: "优化",
+    temperature: 0.7,
+    fetchImpl: options.fetchImpl,
+    sleep: options.sleep,
+    attempts: options.attempts,
+  });
+}
+
+export interface TranslateOptions {
+  config: PromptOptimizerSettings;
+  prompt: string;
+  /** 缺省时按提示词语言自动判断方向 */
+  target?: PromptTranslateTarget;
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  attempts?: number;
+}
+
+export async function translatePrompt(options: TranslateOptions): Promise<{ prompt: string; target: PromptTranslateTarget }> {
+  const target = options.target ?? detectPromptTarget(options.prompt);
+  const prompt = await callChatCompletion({
+    config: options.config,
+    system: translateSystemPrompt(target),
+    user: options.prompt,
+    label: "翻译",
+    temperature: 0.2,
+    fetchImpl: options.fetchImpl,
+    sleep: options.sleep,
+    attempts: options.attempts,
+  });
+  return { prompt, target };
 }

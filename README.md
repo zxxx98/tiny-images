@@ -4,7 +4,7 @@
 
 ## 功能
 
-- **OpenAI images 兼容 API**：`POST /v1/images/generations`、`POST /v1/images/edits`（multipart，含 JSON 回退）、`GET /v1/models`
+- **OpenAI images 兼容 API**：`POST /v1/images/generations`、`POST /v1/images/edits`（multipart，含 JSON 回退）、`POST /v1/images/variations`、`GET /v1/models`
 - **Chat 图片上游兼容**：渠道可将图片生成转换为上游 `POST /v1/chat/completions`，对外仍返回标准 Images API 格式
 - **原生 AI Horde**：支持异步生成轮询、img2img 和 inpainting，并可通过 `horde` 命名空间传递 Horde 专属参数
 - **流式生成**：请求体 `"stream": true` 走 SSE（自定义协议，见下文）
@@ -14,7 +14,7 @@
 - **b64 ↔ url 自动转换**：客户端要的格式与上游返回的不一致时自动转换（b64→url 落盘缓存 24h）
 - **统一错误格式**：所有错误均为 OpenAI 结构 `{"error":{"message","type","code"}}`
 - **WebUI**：Playground + 管理后台（React），由服务端同端口托管
-- **AI 提示词优化**：管理员在设置中配置 OpenAI 兼容 chat 接口后，Playground 一键用 AI 改写提示词（可撤销；上游 429/5xx 自动重试）
+- **AI 提示词优化与翻译**：管理员在设置中配置 OpenAI 兼容 chat 接口后，Playground 一键用 AI 改写提示词或中英互译（方向自动判断，可撤销；上游 429/5xx 自动重试）
 - **鉴权**：对外 API 用 `sk-tiny-` 前缀 key（未配置任何 key 时不鉴权）；Web 登录用邮箱+密码（admin / 普通用户角色，普通用户可配置额度与可用渠道分组）
 - **持久化**：SQLite（Node 内置 `node:sqlite`，无原生编译依赖），配置即数据、改完即生效
 
@@ -71,9 +71,9 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 
 ### AI 提示词优化
 
-管理员在「管理后台 → 设置 → AI 提示词优化」配置一个 OpenAI 兼容 chat 接口（接口地址、API Key、模型，如 `https://api.openai.com/v1` + `gpt-4o-mini`）。配置保存后，Playground 的 Prompt 输入框会出现「AI 优化」按钮：点击即由该模型把当前提示词改写为更适合生图的版本，自动写回输入框，并支持「撤销优化」还原；文本生图与图片编辑模式都可用。接口地址与模型任一留空则不启用，按钮随之隐藏。
+管理员在「管理后台 → 设置 → AI 提示词优化」配置一个 OpenAI 兼容 chat 接口（接口地址、API Key、模型，如 `https://api.openai.com/v1` + `gpt-4o-mini`）。配置保存后，Playground 的 Prompt 输入框会出现「AI 优化」按钮：点击即由该模型把当前提示词改写为更适合生图的版本，自动写回输入框；旁边还有「翻译」按钮，在中文与英文之间互译（方向按提示词语言自动判断，也可在请求中显式指定）。两者共用同一撤销入口；文本生图与图片编辑模式都可用。接口地址与模型任一留空则不启用，按钮随之隐藏。
 
-对应接口为 `POST /v1/prompt/optimize`（登录用户可用），请求体 `{"prompt":"…"}`，返回 `{"prompt":"优化后提示词"}`。上游 429/5xx/网络错误会自动重试（最多 3 次，遵循 `Retry-After`），重试耗尽后返回标准 OpenAI 错误格式。
+对应接口为 `POST /v1/prompt/optimize` 与 `POST /v1/prompt/translate`（登录用户可用）。优化接口请求体 `{"prompt":"…"}`，返回 `{"prompt":"优化后提示词"}`；翻译接口请求体 `{"prompt":"…","target":"en|zh"}`（`target` 可省略，由服务端按语言自动判断），返回 `{"prompt":"译文","target":"en"}`。上游 429/5xx/网络错误会自动重试（最多 3 次，遵循 `Retry-After`），重试耗尽后返回标准 OpenAI 错误格式。
 
 管理员还可在「用户」中配置每个账号是否允许使用 NSFW 模型，并在「模型映射」中标记某条映射是否支持 NSFW。两个选项都默认关闭；只有明确开启权限的用户才能看到和调用 NSFW 映射。管理员账号也需显式开启，未绑定用户的 API Key 和开放模式始终不能访问 NSFW 映射。系统仅按管理员配置执行访问控制，不分析 prompt 或图片内容。
 
@@ -128,6 +128,20 @@ curl http://localhost:3000/v1/images/generations \
 
 - 未指定 `response_format` 时按上游原生格式返回；显式指定 `url` / `b64_json` 时网关自动转换。
 - OpenAI 兼容渠道会原样透传 `quality`、`style` 等其余参数（`response_format` 除外，转换由网关本地完成）。
+
+### 图片变体（variations）
+
+`POST /v1/images/variations` 对应 OpenAI images 的 variations 端点（multipart，仅一张源图、无 prompt）：
+
+```bash
+curl http://localhost:3000/v1/images/variations \
+  -H "Authorization: Bearer sk-tiny-…" \
+  -F "model=dall-e-2" \
+  -F "n=1" \
+  -F "image=@source.png"
+```
+
+仅 Images API 模式的 OpenAI Compatible 渠道支持；Chat 模式与 AI Horde 渠道会返回 400 与明确的错误说明。结果同样进入历史记录（prompt 为空，`params.kind = "variation"`）。
 
 ### 仅支持 Chat Completions 的上游
 

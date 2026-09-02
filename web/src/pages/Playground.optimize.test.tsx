@@ -81,12 +81,12 @@ describe("Playground prompt optimizer", () => {
     const optimize = vi.mocked(apiModule.optimizePrompt);
     expect(optimize).toHaveBeenCalledWith("橘猫 晒太阳");
     expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("一只橘猫在窗台晒太阳，电影感光线");
-    expect(container.textContent).toContain("撤销优化");
+    expect(container.textContent).toContain("撤销");
 
-    await act(async () => button(container, "撤销优化").click());
+    await act(async () => button(container, "撤销").click());
     await flush();
     expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("橘猫 晒太阳");
-    expect(container.textContent).not.toContain("撤销优化");
+    expect(container.textContent).not.toContain("撤销");
   });
 
   it("clears the undo snapshot when the prompt is edited manually", async () => {
@@ -96,10 +96,10 @@ describe("Playground prompt optimizer", () => {
 
     await act(async () => button(container, "AI 优化").click());
     await flush();
-    expect(container.textContent).toContain("撤销优化");
+    expect(container.textContent).toContain("撤销");
 
     await typePrompt(container, "edited by hand");
-    expect(container.textContent).not.toContain("撤销优化");
+    expect(container.textContent).not.toContain("撤销");
   });
 
   it("shows an error and keeps the prompt when optimization fails", async () => {
@@ -132,5 +132,34 @@ describe("Playground prompt optimizer", () => {
     await act(async () => release({ prompt: "done" }));
     await flush();
     expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("done");
+  });
+
+  it("translates the prompt and supports undo", async () => {
+    const translate = vi.spyOn(apiModule, "translatePrompt").mockResolvedValue({ prompt: "an orange cat sunbathing", target: "en" });
+    await renderPlayground();
+    await typePrompt(container, "一只橘猫在晒太阳");
+
+    await act(async () => button(container, "翻译").click());
+    await flush();
+
+    expect(translate).toHaveBeenCalledWith("一只橘猫在晒太阳");
+    expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("an orange cat sunbathing");
+    expect(container.textContent).toContain("撤销");
+
+    await act(async () => button(container, "撤销").click());
+    await flush();
+    expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("一只橘猫在晒太阳");
+  });
+
+  it("shows an error and keeps the prompt when translation fails", async () => {
+    vi.spyOn(apiModule, "translatePrompt").mockRejectedValue(new Error("upstream 500"));
+    await renderPlayground();
+    await typePrompt(container, "draft");
+
+    await act(async () => button(container, "翻译").click());
+    await flush();
+
+    expect((container.querySelector("#pg-prompt") as HTMLTextAreaElement).value).toBe("draft");
+    expect(container.querySelector('[role="alert"]')!.textContent).toContain("AI 翻译失败：upstream 500");
   });
 });
