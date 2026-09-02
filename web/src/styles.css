@@ -377,11 +377,16 @@ textarea[aria-label="高级参数 JSON"] {
   margin-top: 6px;
 }
 
+/* 参数预设行：选择器占满剩余宽度 */
+.preset-row select {
+  flex: 1;
+  min-width: 0;
+}
+
 /* 提示词收藏夹 */
 .favorites {
   margin: 6px 0 2px;
 }
-
 .favorites summary {
   cursor: pointer;
 }

@@ -26,6 +26,7 @@ import AnnouncementDialog, {
 } from "./AnnouncementDialog";
 import EditImageInput from "./EditImageInput";
 import Lightbox from "./Lightbox";
+import { createPreset, loadPresets, newPresetId, PRESET_NAME_MAX, savePresets, type Preset } from "./presets";
 
 interface ModelsResponse {
   data: { id: string; supportsImageToImage?: boolean }[];
@@ -159,6 +160,8 @@ export default function Playground() {
   const [undoPrompt, setUndoPrompt] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<PromptFavorite[]>([]);
   const [favoriting, setFavoriting] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [activePresetId, setActivePresetId] = useState("");
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
   const [upscaleScale, setUpscaleScale] = useState<2 | 4>(2);
@@ -218,6 +221,10 @@ export default function Playground() {
   };
 
   useEffect(reloadFavorites, []);
+
+  useEffect(() => {
+    setPresets(loadPresets());
+  }, []);
 
   // 恢复草稿、历史页带入参数，以及未完成的 job。运行任务的新格式包含 kind，旧裸 id 仍可恢复。
   useEffect(() => {
@@ -596,6 +603,48 @@ export default function Playground() {
     }
   };
 
+  const applyPreset = (id: string): void => {
+    setActivePresetId(id);
+    if (!id) return;
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    const { params } = preset;
+    if (params.model && models.some((m) => m.id === params.model)) setModel(params.model);
+    if (typeof params.n === "number") setN(Math.min(4, Math.max(1, Math.round(params.n))));
+    if (params.size) setSize(params.size);
+    if (params.responseFormat !== undefined) setResponseFormat(params.responseFormat);
+    if (params.extra !== undefined) setExtra(params.extra);
+    setError(null);
+  };
+
+  const currentPresetParams = (): { model: string; n: number; size: string; responseFormat: string; extra: string } => ({
+    model,
+    n,
+    size,
+    responseFormat,
+    extra,
+  });
+
+  const savePreset = (): void => {
+    const name = window.prompt(`预设名称（最多 ${PRESET_NAME_MAX} 字）`, "");
+    if (name === null) return; // 取消
+    const preset = createPreset(name || `预设 ${presets.length + 1}`, currentPresetParams(), newPresetId());
+    const next = [preset, ...presets];
+    setPresets(next);
+    savePresets(next);
+    setActivePresetId(preset.id);
+  };
+
+  const deletePreset = (): void => {
+    if (!activePresetId) return;
+    const preset = presets.find((p) => p.id === activePresetId);
+    if (preset && !window.confirm(`删除预设「${preset.name}」？`)) return;
+    const next = presets.filter((p) => p.id !== activePresetId);
+    setPresets(next);
+    savePresets(next);
+    setActivePresetId("");
+  };
+
   const acknowledgeAnnouncement = (): void => {
     if (!announcement) return;
     persistAnnouncementAcknowledgement(announcement);
@@ -663,6 +712,30 @@ export default function Playground() {
             </>
           ) : (
             <>
+              <label htmlFor="pg-preset">参数预设（模型、数量、尺寸、response_format、高级参数）</label>
+              <div className="row preset-row">
+                <select
+                  id="pg-preset"
+                  value={activePresetId}
+                  onChange={(e) => applyPreset(e.target.value)}
+                  disabled={presets.length === 0 && !activePresetId}
+                >
+                  <option value="">{presets.length === 0 ? "暂无预设" : "选择预设…"}</option>
+                  {presets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn small" type="button" title="把当前参数保存为预设" onClick={savePreset}>
+                  存为预设
+                </button>
+                {activePresetId && (
+                  <button className="btn small danger" type="button" onClick={deletePreset}>
+                    删除预设
+                  </button>
+                )}
+              </div>
               <label htmlFor="pg-model">模型</label>
               {models.length === 0 ? (
                 <p className="muted">
