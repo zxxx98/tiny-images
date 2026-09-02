@@ -156,6 +156,10 @@ export default function History() {
     navigate("/", { state: { upscaleImageUrl: url } });
   };
 
+  const reverseImage = (url: string): void => {
+    navigate("/", { state: { reverseImageUrl: url } });
+  };
+
   const copyPrompt = async (item: HistoryItem): Promise<void> => {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(true);
@@ -265,6 +269,9 @@ export default function History() {
                       </button>
                       <button className="btn small" onClick={() => upscaleImage(img.url)}>
                         超分
+                      </button>
+                      <button className="btn small" onClick={() => reverseImage(img.url)}>
+                        反推
                       </button>
                       <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
                         下载

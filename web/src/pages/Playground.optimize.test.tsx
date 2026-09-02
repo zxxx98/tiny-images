@@ -42,7 +42,7 @@ describe("Playground prompt optimizer", () => {
       throw new Error(`unexpected API: ${path}`);
     });
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: true });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: true, promptReverse: false });
     Object.defineProperty(window, "scrollTo", { configurable: true, value: vi.fn() });
   });
 
@@ -64,7 +64,7 @@ describe("Playground prompt optimizer", () => {
   }
 
   it("hides the optimize button when the feature is disabled", async () => {
-    vi.mocked(apiModule.fetchFeatures).mockResolvedValueOnce({ upscale: false, promptOptimizer: false });
+    vi.mocked(apiModule.fetchFeatures).mockResolvedValueOnce({ upscale: false, promptOptimizer: false, promptReverse: false });
     await renderPlayground();
     expect(container.querySelector("#pg-prompt")).not.toBeNull();
     expect(container.textContent).not.toContain("AI 优化");

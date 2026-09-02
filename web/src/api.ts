@@ -257,6 +257,8 @@ export interface PromptOptimizerSettings {
   model: string;
 }
 
+export type PromptReverseSettings = PromptOptimizerSettings;
+
 export interface RegistrationSettings {
   enabled: boolean;
   dailyQuota: number;
@@ -267,6 +269,7 @@ export interface AppSettings {
   announcement: string;
   announcementVersion: number;
   promptOptimizer: PromptOptimizerSettings;
+  promptReverse: PromptReverseSettings;
   registration: RegistrationSettings;
 }
 
@@ -275,6 +278,7 @@ export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admi
 export const saveSettings = (
   input: Pick<AppSettings, "globalPrompt" | "announcement"> & {
     promptOptimizer?: PromptOptimizerSettings;
+    promptReverse?: PromptReverseSettings;
     registration?: RegistrationSettings;
   },
 ): Promise<AppSettings> => api<AppSettings>("/admin/settings", { method: "PUT", body: input });
@@ -289,6 +293,7 @@ export const fetchAnnouncement = (): Promise<Announcement> => api<Announcement>(
 export interface Features {
   upscale: boolean;
   promptOptimizer: boolean;
+  promptReverse: boolean;
 }
 
 export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/features");
@@ -296,6 +301,12 @@ export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/feature
 // 调用服务端用配置好的 AI 优化提示词，返回优化后的文本
 export const optimizePrompt = (prompt: string): Promise<{ prompt: string }> =>
   api<{ prompt: string }>("/v1/prompt/optimize", { method: "POST", body: { prompt } });
+
+// 图片反推：image 为 data URL（本地文件或历史图片转 base64），返回反推出的提示词
+export type ReverseStyle = "concise" | "detailed" | "cinematic";
+
+export const reverseImagePrompt = (image: string, style: ReverseStyle): Promise<{ prompt: string }> =>
+  api<{ prompt: string }>("/v1/prompt/reverse", { method: "POST", body: { image, style } });
 
 // ---- 生成 job ----
 

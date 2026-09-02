@@ -10,9 +10,11 @@ import {
   fetchJob,
   notifyQuotaChanged,
   optimizePrompt,
+  reverseImagePrompt,
   ApiError,
   type Announcement,
   type JobKind,
+  type ReverseStyle,
 } from "../api";
 import AnnouncementDialog, {
   ANNOUNCEMENT_ACK_KEY,
@@ -37,8 +39,16 @@ const JOB_KEY = "tiny-running-job";
 const DRAFT_KEY = "tiny-playground-draft";
 const EDIT_NOT_SUPPORTED_MESSAGE = "当前模型不支持图生图";
 const UPSCALE_NOT_SUPPORTED_MESSAGE = "当前部署未配置 Cloudflare Images 超分";
+const REVERSE_NOT_CONFIGURED_MESSAGE = "当前部署未配置图片反推";
+const REVERSE_MAX_INPUT_BYTES = 20 * 1024 * 1024;
 
-type PlaygroundMode = "generate" | "edit" | "upscale";
+const REVERSE_STYLE_OPTIONS: { value: ReverseStyle; label: string }[] = [
+  { value: "concise", label: "简洁版" },
+  { value: "detailed", label: "详细版" },
+  { value: "cinematic", label: "极致风格版" },
+];
+
+type PlaygroundMode = "generate" | "edit" | "upscale" | "reverse";
 
 interface Draft {
   mode?: PlaygroundMode;
@@ -62,9 +72,17 @@ interface NavigationState {
   size?: string;
   editImageUrl?: string;
   upscaleImageUrl?: string;
+  reverseImageUrl?: string;
 }
 
 type MultipartJobCreator = (form: FormData) => Promise<{ jobId: string }>;
+
+// 历史记录反推导入只需要列表缩略图，这里用最小形状
+interface ReverseHistoryItem {
+  id: number;
+  prompt: string;
+  images: { url: string }[];
+}
 
 export async function startMultipartJob(
   form: FormData,
@@ -118,6 +136,15 @@ function fileFromImageResponse(blob: Blob, prefix: string): File {
   return new File([blob], `${prefix}.${ext}`, { type: blob.type || "image/png" });
 }
 
+function readFileAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("读取图片文件失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function defaultProgress(kind: JobKind | undefined): string {
   return kind === "upscale" ? "正在进行 AI 超分，首次处理通常比普通图片处理更久…" : "生成中…";
 }
@@ -154,6 +181,16 @@ export default function Playground() {
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
   const [upscaleScale, setUpscaleScale] = useState<2 | 4>(2);
+  const [reverseEnabled, setReverseEnabled] = useState(false);
+  const [reverseFile, setReverseFile] = useState<File | null>(null);
+  const [reversePreview, setReversePreview] = useState<string | null>(null);
+  const [reverseStyle, setReverseStyle] = useState<ReverseStyle>("concise");
+  const [reversing, setReversing] = useState(false);
+  const [reverseResult, setReverseResult] = useState<string | null>(null);
+  const [reverseCopied, setReverseCopied] = useState(false);
+  const [reverseHistoryOpen, setReverseHistoryOpen] = useState(false);
+  const [reverseHistoryLoading, setReverseHistoryLoading] = useState(false);
+  const [reverseHistoryItems, setReverseHistoryItems] = useState<ReverseHistoryItem[]>([]);
   const [pendingEditUrl, setPendingEditUrl] = useState<string | null>(null);
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -187,10 +224,12 @@ export default function Playground() {
       .then((features) => {
         setUpscaleEnabled(features.upscale === true);
         setOptimizerEnabled(features.promptOptimizer === true);
+        setReverseEnabled(features.promptReverse === true);
       })
       .catch(() => {
         setUpscaleEnabled(false);
         setOptimizerEnabled(false);
+        setReverseEnabled(false);
       })
       .finally(() => setFeaturesLoaded(true));
   }, []);
@@ -235,7 +274,7 @@ export default function Playground() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 功能探测完成后再恢复超分草稿/历史跳转，避免请求竞态绕过 feature gate。
+  // 功能探测完成后再恢复超分/反推草稿、历史页跳转，避免请求竞态绕过 feature gate。
   useEffect(() => {
     if (!featuresLoaded) return;
     const fromNav = (location.state ?? null) as NavigationState | null;
@@ -248,8 +287,13 @@ export default function Playground() {
     if (fromNav?.upscaleImageUrl) {
       if (upscaleEnabled) void loadIntoUpscale(fromNav.upscaleImageUrl);
       else setError(UPSCALE_NOT_SUPPORTED_MESSAGE);
+    } else if (fromNav?.reverseImageUrl) {
+      if (reverseEnabled) void loadIntoReverse(fromNav.reverseImageUrl);
+      else setError(REVERSE_NOT_CONFIGURED_MESSAGE);
     } else if (draftMode === "upscale" && upscaleEnabled) {
       setMode("upscale");
+    } else if (draftMode === "reverse" && reverseEnabled) {
+      setMode("reverse");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featuresLoaded]);
@@ -284,6 +328,16 @@ export default function Playground() {
     return () => URL.revokeObjectURL(url);
   }, [upscaleFile]);
 
+  useEffect(() => {
+    if (!reverseFile) {
+      setReversePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(reverseFile);
+    setReversePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [reverseFile]);
+
   // 编辑模式下当前模型不支持图生图时，自动切到支持的模型，避免被弹回文生图。
   useEffect(() => {
     if (mode !== "edit" || !modelsLoaded) return;
@@ -298,7 +352,8 @@ export default function Playground() {
       setError(EDIT_NOT_SUPPORTED_MESSAGE);
     }
     if (mode === "upscale" && featuresLoaded && !upscaleEnabled) setMode("generate");
-  }, [featuresLoaded, hasEditableModel, modelsLoaded, mode, upscaleEnabled]);
+    if (mode === "reverse" && featuresLoaded && !reverseEnabled) setMode("generate");
+  }, [featuresLoaded, hasEditableModel, modelsLoaded, mode, reverseEnabled, upscaleEnabled]);
 
   // 把一张结果图载入编辑模式；入口是结果区的「编辑」按钮（点击图片为放大查看）。
   // 当前模型不支持图生图时自动切到支持的模型，只有完全没有任何可编辑模型才拒绝。
@@ -344,6 +399,96 @@ export default function Playground() {
     } catch (err) {
       setError(`载入图片到超分模式失败：${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  // 把一张远程图片（历史记录 URL）拉回来作为反推输入；返回是否导入成功。
+  const importReverseImage = async (src: string): Promise<boolean> => {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      setReverseFile(fileFromImageResponse(blob, "reverse-src"));
+      setReverseResult(null);
+      setReverseHistoryOpen(false);
+      setError(null);
+      return true;
+    } catch (err) {
+      setError(`导入图片失败：${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  };
+
+  const loadIntoReverse = async (src: string): Promise<void> => {
+    if (!reverseEnabled) {
+      setError(REVERSE_NOT_CONFIGURED_MESSAGE);
+      return;
+    }
+    // 导入成功才切换模式，失败时保留当前模式和结果
+    if (await importReverseImage(src)) {
+      setMode("reverse");
+      window.scrollTo({ top: 0 });
+    }
+  };
+
+  const openReverseHistory = async (): Promise<void> => {
+    setReverseHistoryOpen(true);
+    setReverseHistoryLoading(true);
+    setError(null);
+    try {
+      const r = await api<{ items: ReverseHistoryItem[] }>("/v1/history?limit=24");
+      setReverseHistoryItems(r.items.filter((item) => item.images.length > 0));
+    } catch (err) {
+      setError(`加载历史图片失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setReverseHistoryLoading(false);
+    }
+  };
+
+  const runReverse = async (activityId: number): Promise<void> => {
+    if (!reverseEnabled) {
+      setError(REVERSE_NOT_CONFIGURED_MESSAGE);
+      return;
+    }
+    if (!reverseFile) {
+      setError("请选择一张要反推的图片");
+      return;
+    }
+    if (reverseFile.size > REVERSE_MAX_INPUT_BYTES) {
+      setError("图片太大：请选择 20 MiB 以内的图片");
+      return;
+    }
+    setError(null);
+    setReverseResult(null);
+    setReversing(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(reverseFile);
+      const { prompt } = await reverseImagePrompt(dataUrl, reverseStyle);
+      if (activityRef.current !== activityId) return;
+      if (!prompt.trim()) throw new Error("反推结果为空");
+      setReverseResult(prompt);
+    } catch (err) {
+      if (activityRef.current !== activityId) return;
+      setError(`反推失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setReversing(false);
+    }
+  };
+
+  const copyReverseResult = async (): Promise<void> => {
+    if (!reverseResult) return;
+    await navigator.clipboard.writeText(reverseResult);
+    setReverseCopied(true);
+    window.setTimeout(() => setReverseCopied(false), 1500);
+  };
+
+  // 反推结果一键回填 Prompt 输入框，接着走普通文生图流程
+  const fillReverseResult = (): void => {
+    if (!reverseResult) return;
+    setPrompt(reverseResult);
+    if (undoPrompt !== null) setUndoPrompt(null);
+    setMode("generate");
+    setError(null);
+    window.scrollTo({ top: 0 });
   };
 
   const buildPayload = (): Record<string, unknown> | null => {
@@ -431,6 +576,10 @@ export default function Playground() {
     }
     if (mode === "upscale") {
       await runUpscale(activityId);
+      return;
+    }
+    if (mode === "reverse") {
+      await runReverse(activityId);
       return;
     }
     const payload = buildPayload();
@@ -581,9 +730,81 @@ export default function Playground() {
                 图片超分
               </button>
             )}
+            {reverseEnabled && (
+              <button
+                type="button"
+                className={`btn ${mode === "reverse" ? "primary" : "ghost"}`}
+                aria-pressed={mode === "reverse"}
+                disabled={running || reversing}
+                onClick={() => setMode("reverse")}
+              >
+                图片反推
+              </button>
+            )}
           </div>
 
-          {mode === "upscale" ? (
+          {mode === "reverse" ? (
+            <>
+              <label htmlFor="pg-reverse-image">图片（单张 PNG/JPG/WebP）</label>
+              <input
+                id="pg-reverse-image"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => {
+                  setReverseFile(e.target.files?.[0] ?? null);
+                  setReverseResult(null);
+                }}
+              />
+              {reverseFile && reversePreview && (
+                <figure className="edit-preview reverse-preview" title={reverseFile.name}>
+                  <img src={reversePreview} alt={`待反推图片：${reverseFile.name}`} />
+                  <figcaption className="muted">{reverseFile.name}</figcaption>
+                </figure>
+              )}
+              <button type="button" className="btn" onClick={() => void openReverseHistory()}>
+                从历史导入
+              </button>
+              {reverseHistoryOpen && (
+                <div className="reverse-history" role="group" aria-label="从历史导入图片">
+                  {reverseHistoryLoading && <p className="muted">加载历史图片…</p>}
+                  {!reverseHistoryLoading && reverseHistoryItems.length === 0 && <p className="muted">暂无可导入的历史图片。</p>}
+                  {reverseHistoryItems.map(
+                    (item) =>
+                      item.images[0] && (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="reverse-history-tile"
+                          title={item.prompt ? item.prompt.slice(0, 60) : `记录 #${item.id}`}
+                          onClick={() => void importReverseImage(item.images[0].url)}
+                        >
+                          <img src={item.images[0].url} alt="" loading="lazy" />
+                        </button>
+                      ),
+                  )}
+                  {!reverseHistoryLoading && reverseHistoryItems.length > 0 && (
+                    <button type="button" className="btn small reverse-history-close" onClick={() => setReverseHistoryOpen(false)}>
+                      收起
+                    </button>
+                  )}
+                </div>
+              )}
+              <label>反推类型</label>
+              <div className="row" role="group" aria-label="反推类型">
+                {REVERSE_STYLE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`btn ${reverseStyle === option.value ? "primary" : "ghost"}`}
+                    aria-pressed={reverseStyle === option.value}
+                    onClick={() => setReverseStyle(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : mode === "upscale" ? (
             <>
               <label htmlFor="pg-upscale-image">原图（单张 PNG/JPG/WebP）</label>
               <input
@@ -719,10 +940,27 @@ export default function Playground() {
               type="submit"
               disabled={
                 running ||
-                (mode === "upscale" ? !upscaleEnabled || !upscaleFile : !model || !prompt || (mode === "edit" && (!canEdit || editFiles.length === 0)))
+                reversing ||
+                (mode === "reverse"
+                  ? !reverseFile
+                  : mode === "upscale"
+                    ? !upscaleEnabled || !upscaleFile
+                    : !model || !prompt || (mode === "edit" && (!canEdit || editFiles.length === 0)))
               }
             >
-              {running ? (runningKind === "upscale" ? "超分中…" : "生成中…") : mode === "edit" ? "编辑" : mode === "upscale" ? "开始超分" : "生成"}
+              {reversing
+                ? "反推中…"
+                : running
+                  ? runningKind === "upscale"
+                    ? "超分中…"
+                    : "生成中…"
+                  : mode === "edit"
+                    ? "编辑"
+                    : mode === "upscale"
+                      ? "开始超分"
+                      : mode === "reverse"
+                        ? "开始反推"
+                        : "生成"}
             </button>
             {running && (
               <button className="btn ghost" type="button" onClick={cancel}>
@@ -738,7 +976,7 @@ export default function Playground() {
         </form>
 
         <div className="card">
-          <h2>结果</h2>
+          <h2>{mode === "reverse" ? "反推结果" : "结果"}</h2>
           <div className="meta">
             {channel && <span className="pill">渠道: {channel}</span>}
             {elapsed !== null && <span className="pill">{elapsed} ms</span>}
@@ -749,55 +987,94 @@ export default function Playground() {
                 {runningLabel}
               </span>
             )}
+            {reversing && (
+              <span className="pill hourglass">
+                <span aria-hidden="true" className="hourglass-icon">⌛</span>
+                反推中
+              </span>
+            )}
           </div>
-          {images.length === 0 && !running && <p className="muted">{mode === "upscale" ? "尚无结果。上传一张图片并选择倍率后开始超分。" : "尚无结果。在左侧填写 Prompt 后点「生成」。"}</p>}
-          <div className="gallery">
-            {images.map((src, i) => (
-              <figure key={i} className="shot">
-                <img
-                  src={src}
-                  alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
-                  title="点击放大查看"
-                  onClick={() => setZoomSrc(src)}
-                />
-                <div className="shot-actions">
-                  <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
-                    下载
-                  </a>
-                  <button className="btn small" type="button" disabled={!hasEditableModel} onClick={() => void loadIntoEdit(src)}>
-                    编辑
-                  </button>
-                  {upscaleEnabled && (
-                    <button className="btn small" type="button" onClick={() => void loadIntoUpscale(src)}>
-                      超分
-                    </button>
-                  )}
+          {mode === "reverse" ? (
+            <>
+              {reversing && (
+                <div className="reverse-loading loading-tile" role="status" aria-label="提示词反推中">
+                  <span className="loading-label">正在反推…</span>
+                  <span className="w95-progress" aria-hidden="true">
+                    <span className="w95-progress-blocks" />
+                  </span>
                 </div>
-              </figure>
-            ))}
-            {running &&
-              Array.from({ length: placeholderCount }, (_, i) => (
-                <figure key={`pending-${i}`} className="shot">
-                  <div className="loading-tile" role="status" aria-label={runningKind === "upscale" ? "图片超分中" : "图片生成中"}>
-                    <span className="loading-label">{runningKind === "upscale" ? "正在超分…" : "正在生成…"}</span>
-                    <span className="w95-progress" aria-hidden="true">
-                      <span className="w95-progress-blocks" />
-                    </span>
+              )}
+              {!reversing && !reverseResult && (
+                <p className="muted">上传或从历史导入一张图片，选择反推类型后点「开始反推」。</p>
+              )}
+              {!reversing && reverseResult && (
+                <div className="reverse-result">
+                  <p className="reverse-result-text">{reverseResult}</p>
+                  <div className="row reverse-actions">
+                    <button className="btn small" type="button" onClick={() => void copyReverseResult()}>
+                      {reverseCopied ? "已复制 ✓" : "复制"}
+                    </button>
+                    <button className="btn small" type="button" onClick={fillReverseResult}>
+                      填入 Prompt
+                    </button>
                   </div>
-                </figure>
-              ))}
-          </div>
-          {revisedPrompts.length > 0 && (
-            <details>
-              <summary className="muted">详情（revised_prompt）</summary>
-              <div className="result-details">
-                {revisedPrompts.map((rp, i) => (
-                  <p key={i} className="muted">
-                    revised_prompt：{rp}
-                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {images.length === 0 && !running && (
+                <p className="muted">{mode === "upscale" ? "尚无结果。上传一张图片并选择倍率后开始超分。" : "尚无结果。在左侧填写 Prompt 后点「生成」。"}</p>
+              )}
+              <div className="gallery">
+                {images.map((src, i) => (
+                  <figure key={i} className="shot">
+                    <img
+                      src={src}
+                      alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
+                      title="点击放大查看"
+                      onClick={() => setZoomSrc(src)}
+                    />
+                    <div className="shot-actions">
+                      <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
+                        下载
+                      </a>
+                      <button className="btn small" type="button" disabled={!hasEditableModel} onClick={() => void loadIntoEdit(src)}>
+                        编辑
+                      </button>
+                      {upscaleEnabled && (
+                        <button className="btn small" type="button" onClick={() => void loadIntoUpscale(src)}>
+                          超分
+                        </button>
+                      )}
+                    </div>
+                  </figure>
                 ))}
+                {running &&
+                  Array.from({ length: placeholderCount }, (_, i) => (
+                    <figure key={`pending-${i}`} className="shot">
+                      <div className="loading-tile" role="status" aria-label={runningKind === "upscale" ? "图片超分中" : "图片生成中"}>
+                        <span className="loading-label">{runningKind === "upscale" ? "正在超分…" : "正在生成…"}</span>
+                        <span className="w95-progress" aria-hidden="true">
+                          <span className="w95-progress-blocks" />
+                        </span>
+                      </div>
+                    </figure>
+                  ))}
               </div>
-            </details>
+              {revisedPrompts.length > 0 && (
+                <details>
+                  <summary className="muted">详情（revised_prompt）</summary>
+                  <div className="result-details">
+                    {revisedPrompts.map((rp, i) => (
+                      <p key={i} className="muted">
+                        revised_prompt：{rp}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -2,6 +2,7 @@ import type { FastifyRequest } from "fastify";
 import type { AppContext } from "../app.js";
 import type { CloudflareImagesEnv } from "../env.js";
 import { ServiceUnavailableError, ValidationError } from "../core/errors.js";
+import { isReverseConfigured } from "../core/promptReverse.js";
 import {
   buildCloudflareUpscaleUrl,
   ConcurrencyLimiter,
@@ -177,10 +178,11 @@ async function runUpscaleJob(
 
 export function registerUpscale(ctx: AppContext): void {
   ctx.app.get("/v1/features", async () => {
-    const optimizer = ctx.deps.repo.getAppSettings().promptOptimizer;
+    const settings = ctx.deps.repo.getAppSettings();
     return {
       upscale: config(ctx).enabled,
-      promptOptimizer: !!optimizer.baseUrl && !!optimizer.model,
+      promptOptimizer: !!settings.promptOptimizer.baseUrl && !!settings.promptOptimizer.model,
+      promptReverse: isReverseConfigured(settings),
     };
   });
 

@@ -1613,3 +1613,77 @@ details textarea {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* ---- 图片反推 ---- */
+.reverse-preview {
+  max-width: 180px;
+}
+
+.reverse-preview img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
+.reverse-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.reverse-history-tile {
+  padding: 0;
+  border: 1px solid #888;
+  background: #fff;
+  cursor: pointer;
+}
+
+.reverse-history-tile img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+}
+
+.reverse-history-tile:hover {
+  outline: 2px solid var(--navy);
+}
+
+.reverse-history-close {
+  margin-left: auto;
+}
+
+/* 反推中的加载瓦片：复用生成占位的分段进度条，但不强制 1:1 */
+.reverse-loading {
+  aspect-ratio: auto;
+  min-height: 200px;
+}
+
+.reverse-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reverse-result-text {
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.reverse-actions {
+  gap: 8px;
+}

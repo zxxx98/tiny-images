@@ -3,6 +3,7 @@ import { fetchSettings, saveSettings, type PromptOptimizerSettings, type Registr
 
 const EMPTY_OPTIMIZER: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
 const DEFAULT_REGISTRATION: RegistrationSettings = { enabled: false, dailyQuota: 30 };
+const EMPTY_REVERSE: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
 
 export default function SettingsTab() {
   const [globalPrompt, setGlobalPrompt] = useState("");
@@ -10,6 +11,7 @@ export default function SettingsTab() {
   const [optimizer, setOptimizer] = useState<PromptOptimizerSettings>(EMPTY_OPTIMIZER);
   const [registration, setRegistration] = useState<RegistrationSettings>(DEFAULT_REGISTRATION);
   const [quotaText, setQuotaText] = useState(String(DEFAULT_REGISTRATION.dailyQuota));
+  const [reverse, setReverse] = useState<PromptOptimizerSettings>(EMPTY_REVERSE);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,6 +30,7 @@ export default function SettingsTab() {
         const reg = settings.registration ?? DEFAULT_REGISTRATION;
         setRegistration(reg);
         setQuotaText(String(reg.dailyQuota));
+        setReverse(settings.promptReverse ?? EMPTY_REVERSE);
         setLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -53,10 +56,11 @@ export default function SettingsTab() {
     setError(null);
     try {
       const next: RegistrationSettings = { ...registration, dailyQuota };
-      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer, registration: next });
+      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer, promptReverse: reverse, registration: next });
       setGlobalPrompt(settings.globalPrompt);
       setAnnouncement(settings.announcement);
       setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
+      setReverse(settings.promptReverse ?? EMPTY_REVERSE);
       const reg = settings.registration ?? next;
       setRegistration(reg);
       setQuotaText(String(reg.dailyQuota));
@@ -134,6 +138,39 @@ export default function SettingsTab() {
         />
         <p className="muted">配置后 Playground 的 Prompt 输入框会出现「AI 优化」按钮；接口地址与模型任一留空则不启用。</p>
 
+        <h3>AI 图片反推</h3>
+        <label htmlFor="settings-reverse-base-url">反推接口地址（OpenAI 兼容 chat 接口，需支持视觉）</label>
+        <input
+          id="settings-reverse-base-url"
+          type="text"
+          value={reverse.baseUrl}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, baseUrl: event.target.value }))}
+          placeholder="https://api.openai.com/v1"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-reverse-api-key">API Key</label>
+        <input
+          id="settings-reverse-api-key"
+          type="password"
+          value={reverse.apiKey}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, apiKey: event.target.value }))}
+          placeholder="sk-…"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-reverse-model">模型</label>
+        <input
+          id="settings-reverse-model"
+          type="text"
+          value={reverse.model}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, model: event.target.value }))}
+          placeholder="gpt-4o-mini / qwen-vl …"
+          spellCheck={false}
+        />
+        <p className="muted">配置后 Playground 会出现「图片反推」模式，由视觉模型反推图片提示词；留空时使用上方「AI 提示词优化」的接口配置。</p>
         <h3>用户注册</h3>
         <div className="check-row">
           <input
