@@ -97,7 +97,7 @@ describe("POST /v1/images/generations", () => {
     expect(res.json().data[0].url).toBe("http://example.test/x.png");
   });
 
-  it("rejects a private upstream image URL when client wants b64", async () => {
+  it("converts upstream url to b64 when client wants b64", async () => {
     upstream.get("/x.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
     upstream.post("/v1/images/generations", async (_req, reply) =>
       reply.send({ created: 1, data: [{ url: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/x.png` }] }),
@@ -108,8 +108,9 @@ describe("POST /v1/images/generations", () => {
       url: "/v1/images/generations",
       payload: { model: "img-1", prompt: "cat", response_format: "b64_json" },
     });
-    expect(res.statusCode).toBe(502);
-    expect(res.json().error.message).toContain("not publicly routable");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data[0].b64_json).toBe(PNG_B64);
+    expect(res.json().data[0].url).toBeUndefined();
   });
 
   it("converts upstream b64 to file url when client wants url", async () => {
