@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, fetchChannelHealth, type ApiKey, type Channel, type ChannelHealth, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
+import { api, fetchChannelHealth, getToken, type ApiKey, type Channel, type ChannelHealth, type ChannelKey, type LogRow, type ModelMapping, type UserView } from "../api";
 import GroupsTab from "./admin/GroupsTab";
 import UsersTab from "./admin/UsersTab";
 import SettingsTab from "./admin/SettingsTab";
@@ -650,16 +650,46 @@ function ApiKeysTab() {
 
 // ---- 日志 ----
 
+interface AppliedLogFilter {
+  model?: string;
+  q?: string;
+  status?: string;
+  channelId?: string;
+}
+
+// 由当前筛选条件拼出 /admin/logs 的 query（不含 limit）
+export function buildLogQuery(filter: AppliedLogFilter): string {
+  const params = new URLSearchParams();
+  if (filter.model) params.set("model", filter.model);
+  if (filter.q) params.set("q", filter.q);
+  if (filter.status) params.set("status", filter.status);
+  if (filter.channelId) params.set("channelId", filter.channelId);
+  const s = params.toString();
+  return s ? `&${s}` : "";
+}
+
 function LogsTab() {
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [modelInput, setModelInput] = useState("");
+  const [qInput, setQInput] = useState("");
+  const [statusInput, setStatusInput] = useState("");
+  const [channelInput, setChannelInput] = useState("");
+  const [applied, setApplied] = useState<AppliedLogFilter>({});
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<Channel[]>("/admin/channels")
+      .then((rows) => setChannels(rows))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     const load = (): void => {
       // 后台标签页不轮询，回到前台后由下一次定时器接管
       if (document.visibilityState === "hidden") return;
-      api<LogRow[]>("/admin/logs?limit=50")
+      api<LogRow[]>(`/admin/logs?limit=50${buildLogQuery(applied)}`)
         .then((rows) => {
           if (!alive) return;
           setLogs(rows);
@@ -675,17 +705,93 @@ function LogsTab() {
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [applied]);
+
+  const applyFilters = (): void => {
+    setApplied({ model: modelInput.trim(), q: qInput.trim(), status: statusInput, channelId: channelInput });
+  };
+
+  const resetFilters = (): void => {
+    setModelInput("");
+    setQInput("");
+    setStatusInput("");
+    setChannelInput("");
+    setApplied({});
+  };
+
+  const submitOnEnter = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Enter") applyFilters();
+  };
+
+  const exportCsv = async (): Promise<void> => {
+    setError(null);
+    try {
+      const res = await fetch(`/admin/logs/export?limit=500${buildLogQuery(applied)}`, {
+        headers: { authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tiny-images-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const hasFilters = !!(applied.model || applied.q || applied.status || applied.channelId);
 
   return (
     <div className="card">
-      <p className="muted">最近 50 条请求，每 5 秒自动刷新。</p>
+      <p className="muted">最近 500 条请求内可筛选，每 5 秒自动刷新。</p>
+      <div className="row log-filters">
+        <input
+          aria-label="按模型筛选"
+          placeholder="按 model 筛选…"
+          value={modelInput}
+          onChange={(e) => setModelInput(e.target.value)}
+          onKeyDown={submitOnEnter}
+        />
+        <select aria-label="按状态筛选" value={statusInput} onChange={(e) => setStatusInput(e.target.value)}>
+          <option value="">全部状态</option>
+          <option value="ok">ok</option>
+          <option value="error">error</option>
+        </select>
+        <select aria-label="按渠道筛选" value={channelInput} onChange={(e) => setChannelInput(e.target.value)}>
+          <option value="">全部渠道</option>
+          {channels.map((c) => (
+            <option key={c.id} value={String(c.id)}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="搜索错误内容"
+          placeholder="搜索 model / 错误内容…"
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+          onKeyDown={submitOnEnter}
+        />
+        <button className="btn small" onClick={applyFilters}>
+          筛选
+        </button>
+        <button className="btn small" onClick={resetFilters}>
+          重置
+        </button>
+        <button className="btn small" onClick={() => void exportCsv()}>
+          导出 CSV
+        </button>
+        {hasFilters && <span className="muted">筛选已启用</span>}
+      </div>
       {error && (
         <div className="error" role="status">
           日志加载失败：{error}（将自动重试）
         </div>
       )}
-      {logs.length === 0 && !error && <p className="muted">暂无请求记录。发起一次生成后这里会出现调用日志。</p>}
+      {logs.length === 0 && !error && <p className="muted">{hasFilters ? "没有符合筛选条件的记录。" : "暂无请求记录。发起一次生成后这里会出现调用日志。"}</p>}
       <div className="table-scroll">
         <table>
           <thead>

@@ -60,6 +60,13 @@ export interface LogRow extends LogEntry {
   id: number;
 }
 
+export interface LogFilter {
+  model?: string;
+  status?: "ok" | "error";
+  channelId?: number;
+  q?: string;
+}
+
 export interface GenerationEntry {
   createdAt: number;
   apiKeyId: number | null;
@@ -147,7 +154,7 @@ export interface ChannelInput {
   enabled?: boolean;
 }
 
-const LOG_KEEP = 50;
+const LOG_KEEP = 500;
 const FAVORITES_KEEP_PER_USER = 200;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -537,7 +544,31 @@ export class Repo {
   }
 
   recentLogs(limit: number): LogRow[] {
-    const rows = this.db.prepare("SELECT * FROM request_logs ORDER BY id DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+    return this.listLogs(limit);
+  }
+
+  // 管理日志过滤条件：model/q 为子串匹配（大小写不敏感），status/channelId 为精确匹配
+  listLogs(limit: number, filter: LogFilter = {}): LogRow[] {
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (filter.model) {
+      where.push("LOWER(model) LIKE ?");
+      args.push(`%${filter.model.toLowerCase()}%`);
+    }
+    if (filter.status) {
+      where.push("status = ?");
+      args.push(filter.status);
+    }
+    if (filter.channelId !== undefined) {
+      where.push("channel_id = ?");
+      args.push(filter.channelId);
+    }
+    if (filter.q) {
+      where.push("(LOWER(model) LIKE ? OR LOWER(COALESCE(error_message, '')) LIKE ?)");
+      args.push(`%${filter.q.toLowerCase()}%`, `%${filter.q.toLowerCase()}%`);
+    }
+    const sql = `SELECT * FROM request_logs ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ?`;
+    const rows = this.db.prepare(sql).all(...args, limit) as Record<string, unknown>[];
     return rows.map((r) => ({
       id: Number(r.id),
       ts: Number(r.ts),

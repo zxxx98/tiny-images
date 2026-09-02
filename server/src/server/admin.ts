@@ -1,10 +1,11 @@
 import { httpError } from "../core/errors.js";
-import { ConflictError } from "../store/repo.js";
+import { ConflictError, type LogFilter } from "../store/repo.js";
 import { hashPassword } from "../core/password.js";
 import type { ChannelType, EditMode, GenerationMode } from "../core/types.js";
 import type { AppContext } from "../app.js";
 import type { UserRow } from "../store/repo.js";
 import { providerFor } from "../providers/registry.js";
+import type { FastifyRequest } from "fastify";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
@@ -482,13 +483,66 @@ export function registerAdmin(ctx: AppContext): void {
   // ---- logs ----
 
   ctx.app.get("/admin/logs", { preHandler: ctx.requireAdmin }, async (req) => {
-    const raw = (req.query as { limit?: string } | null)?.limit;
-    let limit = 50;
-    if (raw !== undefined) {
-      const parsed = Number.parseInt(raw, 10);
-      if (!Number.isFinite(parsed) || parsed < 1) throw httpError(400, "'limit' must be a positive integer");
-      limit = Math.min(parsed, 500);
-    }
-    return repo.recentLogs(limit);
+    const { limit, filter } = parseLogQuery(req);
+    return repo.listLogs(limit, filter);
   });
+
+  ctx.app.get("/admin/logs/export", { preHandler: ctx.requireAdmin }, async (req, reply) => {
+    const { limit, filter } = parseLogQuery(req);
+    const rows = repo.listLogs(limit, filter);
+    const header = ["id", "ts", "model", "channel_id", "api_key_id", "status", "http_status", "latency_ms", "error_message"];
+    const lines = [header.join(",")];
+    for (const r of rows) {
+      lines.push(
+        [
+          r.id,
+          new Date(r.ts).toISOString(),
+          r.model,
+          r.channelId,
+          r.apiKeyId,
+          r.status,
+          r.httpStatus,
+          r.latencyMs,
+          r.errorMessage,
+        ]
+          .map(csvField)
+          .join(","),
+      );
+    }
+    // BOM 让 Excel 正确识别 UTF-8
+    const csv = `\uFEFF${lines.join("\r\n")}\r\n`;
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
+    reply.header("content-type", "text/csv; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="tiny-images-logs-${stamp}.csv"`);
+    return csv;
+  });
+}
+
+function parseLogQuery(req: FastifyRequest): { limit: number; filter: LogFilter } {
+  const q = (req.query ?? {}) as Record<string, string | undefined>;
+  let limit = 50;
+  if (q.limit !== undefined) {
+    const parsed = Number.parseInt(q.limit, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) throw httpError(400, "'limit' must be a positive integer");
+    limit = Math.min(parsed, 500);
+  }
+  const filter: LogFilter = {};
+  if (q.model !== undefined && q.model.trim()) filter.model = q.model.trim();
+  if (q.q !== undefined && q.q.trim()) filter.q = q.q.trim();
+  if (q.status !== undefined && q.status !== "") {
+    if (q.status !== "ok" && q.status !== "error") throw httpError(400, "'status' must be 'ok' or 'error'");
+    filter.status = q.status;
+  }
+  if (q.channelId !== undefined && q.channelId !== "") {
+    const parsed = Number.parseInt(q.channelId, 10);
+    if (!Number.isInteger(parsed)) throw httpError(400, "'channelId' must be an integer");
+    filter.channelId = parsed;
+  }
+  return { limit, filter };
+}
+
+// CSV 字段转义：含逗号/引号/换行时加引号并双写内部引号
+function csvField(value: unknown): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
