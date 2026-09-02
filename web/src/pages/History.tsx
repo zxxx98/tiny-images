@@ -1,6 +1,7 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import Lightbox from "./Lightbox";
 
 interface HistoryImage {
   file: string;
@@ -101,6 +102,7 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<HistoryItem | null>(null);
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loadedImageSizes, setLoadedImageSizes] = useState<Record<string, ImageDimensions>>({});
   const navigate = useNavigate();
@@ -163,11 +165,12 @@ export default function History() {
   useEffect(() => {
     if (!detail) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setDetail(null);
+      // 灯箱打开时 Esc 只关灯箱，避免连带关闭详情弹窗。
+      if (e.key === "Escape" && !zoomSrc) setDetail(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detail]);
+  }, [detail, zoomSrc]);
 
   const statusLabel = (item: HistoryItem): string =>
     item.status === "ok" ? "成功" : item.status === "error" ? "失败" : isUpscaleHistoryItem(item) ? "超分中" : "生成中";
@@ -247,6 +250,12 @@ export default function History() {
                       src={img.url}
                       alt={`历史图片 ${i + 1}`}
                       loading="lazy"
+                      title="点击放大查看"
+                      onClick={(e) => {
+                        // 阻止冒泡到详情遮罩，避免点击图片时连带关闭详情。
+                        e.stopPropagation();
+                        setZoomSrc(img.url);
+                      }}
                       onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
                       onError={markExpired}
                     />
@@ -313,6 +322,7 @@ export default function History() {
               </div>
             </div>
           </div>
+          {zoomSrc && <Lightbox src={zoomSrc} alt="历史图片" onClose={() => setZoomSrc(null)} />}
         </div>
       )}
     </div>

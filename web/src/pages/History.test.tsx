@@ -96,7 +96,7 @@ describe("history upscale rows", () => {
     expect(container.querySelector('[data-testid="location-state"]')?.textContent).toBe('{"upscaleImageUrl":"/files/upscaled.webp"}');
   });
 
-  it("keeps the detail open when clicking a history image", async () => {
+  it("opens a lightbox from the detail image and keeps the detail open", async () => {
     await act(async () => {
       root.render(
         <MemoryRouter initialEntries={["/history"]}>
@@ -115,8 +115,22 @@ describe("history upscale rows", () => {
     await act(async () => image.click());
 
     expect(container.querySelector(".detail-overlay")).not.toBeNull();
+    const lightbox = container.querySelector(".lightbox img") as HTMLImageElement;
+    expect(lightbox).not.toBeNull();
+    expect(lightbox.getAttribute("src")).toBe("/files/upscaled.webp");
     expect(container.querySelector('[data-testid="location-state"]')).toBeNull();
     expect(container.querySelector('[data-testid="location-path"]')?.textContent).toBe("/history");
+
+    // Esc 只关灯箱，详情弹窗保留
+    await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(container.querySelector(".lightbox")).toBeNull();
+    expect(container.querySelector(".detail-overlay")).not.toBeNull();
+
+    // 再次打开后点击灯箱空白处关闭，详情弹窗仍在
+    await act(async () => image.click());
+    await act(async () => (container.querySelector(".lightbox") as HTMLDivElement).click());
+    expect(container.querySelector(".lightbox")).toBeNull();
+    expect(container.querySelector(".detail-overlay")).not.toBeNull();
   });
 
   it("navigates to edit mode only from the explicit edit action", async () => {

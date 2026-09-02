@@ -1530,7 +1530,7 @@ details textarea {
   align-items: center;
   justify-content: center;
   cursor: zoom-out;
-  z-index: 100;
+  z-index: 200;
 }
 .lightbox img {
   max-width: 90vw;
@@ -1542,8 +1542,9 @@ details textarea {
   max-width: 80vw;
   word-break: break-all;
 }
-.gallery .shot img {
-  cursor: pointer;
+.gallery .shot img,
+.detail-gallery .shot img {
+  cursor: zoom-in;
 }
 .shot-actions {
   display: flex;

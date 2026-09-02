@@ -19,6 +19,7 @@ import AnnouncementDialog, {
   shouldShowAnnouncement,
 } from "./AnnouncementDialog";
 import EditImageInput from "./EditImageInput";
+import Lightbox from "./Lightbox";
 
 interface ModelsResponse {
   data: { id: string; supportsImageToImage?: boolean }[];
@@ -124,9 +125,16 @@ function defaultFailure(kind: JobKind | undefined): string {
   return kind === "upscale" ? "超分失败，可重试" : kind === "edit" ? "编辑失败" : "生成失败";
 }
 
+// 选一个支持图生图的模型：当前模型可用则保持，否则取第一个支持编辑的。
+function pickEditableModelId(models: PlaygroundModel[], current: string): string | null {
+  if (models.some((m) => m.id === current && m.supportsImageToImage)) return current;
+  return models.find((m) => m.supportsImageToImage)?.id ?? null;
+}
+
 export default function Playground() {
   const [mode, setMode] = useState<PlaygroundMode>("generate");
   const [models, setModels] = useState<PlaygroundModel[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
   const [n, setN] = useState(1);
@@ -141,6 +149,8 @@ export default function Playground() {
   const [upscaleFile, setUpscaleFile] = useState<File | null>(null);
   const [upscalePreview, setUpscalePreview] = useState<string | null>(null);
   const [upscaleScale, setUpscaleScale] = useState<2 | 4>(2);
+  const [pendingEditUrl, setPendingEditUrl] = useState<string | null>(null);
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runningKind, setRunningKind] = useState<JobKind | undefined>(undefined);
   const [status, setStatus] = useState<string | null>(null);
@@ -155,7 +165,7 @@ export default function Playground() {
   const location = useLocation();
   const selectedModel = models.find((item) => item.id === model);
   const canEdit = selectedModel?.supportsImageToImage === true;
-  const editUnavailable = selectedModel !== undefined && !canEdit;
+  const hasEditableModel = models.some((item) => item.supportsImageToImage);
 
   useEffect(() => {
     api<ModelsResponse>("/v1/models")
@@ -163,7 +173,8 @@ export default function Playground() {
         setModels(r.data.map((m) => ({ id: m.id, supportsImageToImage: m.supportsImageToImage === true })));
         if (r.data.length > 0) setModel((cur) => cur || r.data[0].id);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setModelsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -187,7 +198,7 @@ export default function Playground() {
       const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}") as Draft;
       const fromNav = (location.state ?? null) as NavigationState | null;
       if (draft.mode === "generate" || draft.mode === "edit") setMode(draft.mode);
-      if (fromNav?.editImageUrl) void loadIntoEdit(fromNav.editImageUrl);
+      if (fromNav?.editImageUrl) setPendingEditUrl(fromNav.editImageUrl);
       if (fromNav?.prompt) setPrompt(fromNav.prompt);
       else if (draft.prompt) setPrompt(draft.prompt);
       if (fromNav?.model) setModel(fromNav.model);
@@ -232,6 +243,15 @@ export default function Playground() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featuresLoaded]);
 
+  // 模型列表就绪后再载入历史页带来的编辑图，以便自动选中支持图生图的模型。
+  useEffect(() => {
+    if (!modelsLoaded || !pendingEditUrl) return;
+    const url = pendingEditUrl;
+    setPendingEditUrl(null);
+    void loadIntoEdit(url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelsLoaded, pendingEditUrl]);
+
   // 表单草稿持久化，切走再回来不丢文本和倍率（文件不持久化）。
   useEffect(() => {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ mode, model, prompt, n, size, responseFormat, extra, upscaleScale }));
@@ -253,17 +273,31 @@ export default function Playground() {
     return () => URL.revokeObjectURL(url);
   }, [upscaleFile]);
 
+  // 编辑模式下当前模型不支持图生图时，自动切到支持的模型，避免被弹回文生图。
   useEffect(() => {
-    if (mode === "edit" && editUnavailable) setMode("generate");
-    if (mode === "upscale" && featuresLoaded && !upscaleEnabled) setMode("generate");
-  }, [editUnavailable, featuresLoaded, mode, upscaleEnabled]);
+    if (mode !== "edit" || !modelsLoaded) return;
+    if (selectedModel?.supportsImageToImage) return;
+    const candidate = models.find((item) => item.supportsImageToImage);
+    if (candidate) setModel(candidate.id);
+  }, [mode, models, modelsLoaded, selectedModel]);
 
-  // 把一张结果图载入编辑模式；既有点击图片进入编辑的行为保持不变。
+  useEffect(() => {
+    if (mode === "edit" && modelsLoaded && !hasEditableModel) {
+      setMode("generate");
+      setError(EDIT_NOT_SUPPORTED_MESSAGE);
+    }
+    if (mode === "upscale" && featuresLoaded && !upscaleEnabled) setMode("generate");
+  }, [featuresLoaded, hasEditableModel, modelsLoaded, mode, upscaleEnabled]);
+
+  // 把一张结果图载入编辑模式；入口是结果区的「编辑」按钮（点击图片为放大查看）。
+  // 当前模型不支持图生图时自动切到支持的模型，只有完全没有任何可编辑模型才拒绝。
   const loadIntoEdit = async (src: string): Promise<void> => {
-    if (editUnavailable) {
+    const editableId = pickEditableModelId(models, model);
+    if (modelsLoaded && !editableId) {
       setError(EDIT_NOT_SUPPORTED_MESSAGE);
       return;
     }
+    if (editableId && editableId !== model) setModel(editableId);
     try {
       const res = await fetch(src);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -490,12 +524,12 @@ export default function Playground() {
             <button type="button" className={`btn ${mode === "generate" ? "primary" : "ghost"}`} aria-pressed={mode === "generate"} onClick={() => setMode("generate")}>
               文生图
             </button>
-            <span className="btn-tooltip" title={editUnavailable ? EDIT_NOT_SUPPORTED_MESSAGE : undefined}>
+            <span className="btn-tooltip" title={!hasEditableModel ? EDIT_NOT_SUPPORTED_MESSAGE : undefined}>
               <button
                 type="button"
                 className={`btn ${mode === "edit" ? "primary" : "ghost"}`}
                 aria-pressed={mode === "edit"}
-                disabled={running || !canEdit}
+                disabled={running || !hasEditableModel}
                 onClick={() => setMode("edit")}
               >
                 图片编辑
@@ -665,14 +699,14 @@ export default function Playground() {
                 <img
                   src={src}
                   alt={prompt ? `生成结果：${prompt.slice(0, 60)}` : `生成结果 ${i + 1}`}
-                  title={editUnavailable ? EDIT_NOT_SUPPORTED_MESSAGE : "点击进入图片编辑"}
-                  onClick={editUnavailable ? undefined : () => void loadIntoEdit(src)}
+                  title="点击放大查看"
+                  onClick={() => setZoomSrc(src)}
                 />
                 <div className="shot-actions">
                   <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
                     下载
                   </a>
-                  <button className="btn small" type="button" disabled={editUnavailable} onClick={() => void loadIntoEdit(src)}>
+                  <button className="btn small" type="button" disabled={!hasEditableModel} onClick={() => void loadIntoEdit(src)}>
                     编辑
                   </button>
                   {upscaleEnabled && (
@@ -709,6 +743,7 @@ export default function Playground() {
           )}
         </div>
       </div>
+      {zoomSrc && <Lightbox src={zoomSrc} alt="生成结果" onClose={() => setZoomSrc(null)} />}
     </>
   );
 }
