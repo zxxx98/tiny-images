@@ -67,21 +67,32 @@ describe("ModelRouter failover + circuit breaker", () => {
     expect(router.resolve("img", { allowedChannelIds: [999], allowNsfw: false })).toBeNull();
   });
 
-  it("opens circuit after consecutive failures and skips channel until cooldown", () => {
+  it("opens circuit after consecutive failures and skips the mapping until cooldown", () => {
     const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
     const c2 = repo.createChannel({ name: "b", baseUrl: "https://y/v1" });
-    repo.createModel({ publicName: "img", channelId: c1.id, priority: 0 });
+    const primary = repo.createModel({ publicName: "img", channelId: c1.id, priority: 0 });
     const backup = repo.createModel({ publicName: "img", channelId: c2.id, priority: 10 });
-    // 阈值内仍选主渠道
-    router.markFailure(c1.id);
-    router.markFailure(c1.id);
+    // 阈值内仍选主映射
+    router.markFailure(primary.id);
+    router.markFailure(primary.id);
     expect(router.resolve("img")!.channel.id).toBe(c1.id);
-    // 达到阈值 → 主渠道熔断，切备选
-    router.markFailure(c1.id);
-    expect(router.isCoolingDown(c1.id)).toBe(true);
+    // 达到阈值 → 主映射熔断，切备选
+    router.markFailure(primary.id);
+    expect(router.isCoolingDown(primary.id)).toBe(true);
     expect(router.resolve("img")!.model.id).toBe(backup.id);
     // 冷却结束恢复
-    router.markSuccess(c1.id);
+    router.markSuccess(primary.id);
     expect(router.resolve("img")!.channel.id).toBe(c1.id);
+  });
+
+  it("cooling one model mapping does not affect other models on the same channel", () => {
+    const c1 = repo.createChannel({ name: "a", baseUrl: "https://x/v1" });
+    const broken = repo.createModel({ publicName: "img-a", channelId: c1.id, priority: 0 });
+    repo.createModel({ publicName: "img-b", channelId: c1.id, priority: 0 });
+    router.markFailure(broken.id);
+    router.markFailure(broken.id);
+    router.markFailure(broken.id);
+    expect(router.isCoolingDown(broken.id)).toBe(true);
+    expect(router.resolve("img-b")!.channel.id).toBe(c1.id);
   });
 });

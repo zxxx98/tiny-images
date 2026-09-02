@@ -125,11 +125,14 @@ export function registerAdmin(ctx: AppContext): void {
       const successful = channelLogs.filter((log) => log.status === "ok").length;
       const latencies = channelLogs.flatMap((log) => (log.latencyMs === null ? [] : [log.latencyMs]));
       const latest = channelLogs[0] ?? null;
-      const route = ctx.deps.router.health(channel.id);
+      // 熔断按模型映射记录：只有渠道上所有启用的映射都在冷却时，渠道才算整体熔断
+      const mappings = repo.listEnabledModels().filter((m) => m.channelId === channel.id);
+      const coolingMappings = mappings.filter((m) => ctx.deps.router.health(m.id).coolingDown);
+      const circuitOpen = mappings.length > 0 && coolingMappings.length === mappings.length;
       let status: "disabled" | "no-key" | "circuit-open" | "unknown" | "error" | "healthy";
       if (!channel.enabled) status = "disabled";
       else if (enabledKeys.length === 0) status = "no-key";
-      else if (route.coolingDown) status = "circuit-open";
+      else if (circuitOpen) status = "circuit-open";
       else if (channelLogs.length === 0) status = "unknown";
       else if (successful < channelLogs.length) status = "error";
       else status = "healthy";
@@ -145,6 +148,10 @@ export function registerAdmin(ctx: AppContext): void {
           available: enabledKeys.length - coolingKeys.length,
           coolingDown: coolingKeys.length,
         },
+        models: {
+          total: mappings.length,
+          coolingDown: coolingMappings.length,
+        },
         requests: {
           sampleSize: channelLogs.length,
           successful,
@@ -154,7 +161,6 @@ export function registerAdmin(ctx: AppContext): void {
           lastRequestAt: latest?.ts ?? null,
           lastError: latest?.status === "error" ? latest.errorMessage : null,
         },
-        circuit: route,
       };
     });
   });

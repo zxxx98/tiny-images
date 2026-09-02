@@ -127,6 +127,7 @@ export interface ChannelHealth {
   enabled: boolean;
   status: "disabled" | "no-key" | "circuit-open" | "unknown" | "error" | "healthy";
   keys: { total: number; enabled: number; available: number; coolingDown: number };
+  models: { total: number; coolingDown: number };
   requests: {
     sampleSize: number;
     successful: number;
@@ -136,7 +137,6 @@ export interface ChannelHealth {
     lastRequestAt: number | null;
     lastError: string | null;
   };
-  circuit: { failureCount: number; coolingDown: boolean; cooldownUntil: number | null };
 }
 
 export const fetchChannelHealth = (): Promise<ChannelHealth[]> => api<ChannelHealth[]>("/admin/channel-health");

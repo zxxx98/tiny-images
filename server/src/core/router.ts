@@ -14,7 +14,7 @@ export interface ResolvedRoute {
   channel: ChannelRow;
 }
 
-export interface ChannelHealthSnapshot {
+export interface RouteHealthSnapshot {
   failureCount: number;
   coolingDown: boolean;
   cooldownUntil: number | null;
@@ -29,9 +29,11 @@ export interface RouterOptions {
 
 /**
  * 模型路由：不同 priority 按优先级故障转移，同一 priority 内按映射轮询；
- * 渠道连续失败达到阈值后进入内存熔断（冷却期内跳过，全部冷却中则兜底尝试）。
+ * 单个模型映射（渠道 + 上游模型）连续失败达到阈值后进入内存熔断
+ * （冷却期内跳过该映射，不影响同渠道其他模型；全部冷却中则兜底尝试）。
  */
 export class ModelRouter {
+  /** 熔断按模型映射 id 记录，同渠道上的其他模型映射不受影响 */
   private failures = new Map<number, number>();
   private cooldowns = new Map<number, number>();
   private roundRobin = new Map<string, number>();
@@ -54,7 +56,7 @@ export class ModelRouter {
     const pickGroup = (priority: number, models: ModelRow[], respectCooldown: boolean): ResolvedRoute | null => {
       const valid = models.filter((model) => {
         if (!modelAllowedByPolicy(model, policy)) return false;
-        if (respectCooldown && this.isCoolingDown(model.channelId)) return false;
+        if (respectCooldown && this.isCoolingDown(model.id)) return false;
         const channel = this.repo.getChannel(model.channelId);
         return !!channel?.enabled;
       });
@@ -94,31 +96,31 @@ export class ModelRouter {
     return this.opts.cooldownMs ?? 60_000;
   }
 
-  isCoolingDown(channelId: number): boolean {
-    return (this.cooldowns.get(channelId) ?? 0) > Date.now();
+  isCoolingDown(mappingId: number): boolean {
+    return (this.cooldowns.get(mappingId) ?? 0) > Date.now();
   }
 
-  health(channelId: number): ChannelHealthSnapshot {
-    const cooldownUntil = this.cooldowns.get(channelId) ?? null;
+  health(mappingId: number): RouteHealthSnapshot {
+    const cooldownUntil = this.cooldowns.get(mappingId) ?? null;
     return {
-      failureCount: this.failures.get(channelId) ?? 0,
+      failureCount: this.failures.get(mappingId) ?? 0,
       coolingDown: cooldownUntil !== null && cooldownUntil > Date.now(),
       cooldownUntil,
     };
   }
 
-  markSuccess(channelId: number): void {
-    this.failures.delete(channelId);
-    this.cooldowns.delete(channelId);
+  markSuccess(mappingId: number): void {
+    this.failures.delete(mappingId);
+    this.cooldowns.delete(mappingId);
   }
 
-  markFailure(channelId: number): void {
-    const n = (this.failures.get(channelId) ?? 0) + 1;
+  markFailure(mappingId: number): void {
+    const n = (this.failures.get(mappingId) ?? 0) + 1;
     if (n >= this.threshold()) {
-      this.cooldowns.set(channelId, Date.now() + this.cooldownMs());
-      this.failures.delete(channelId);
+      this.cooldowns.set(mappingId, Date.now() + this.cooldownMs());
+      this.failures.delete(mappingId);
     } else {
-      this.failures.set(channelId, n);
+      this.failures.set(mappingId, n);
     }
   }
 }

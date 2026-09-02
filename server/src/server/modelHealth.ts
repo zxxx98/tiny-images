@@ -36,7 +36,7 @@ interface ModelHealthInput {
   logs: LogRow[];
   now: number;
   availableKeyCount: (channelId: number, now: number) => number;
-  channelHealth: (channelId: number) => { coolingDown: boolean };
+  mappingHealth: (mappingId: number) => { coolingDown: boolean };
 }
 
 export function aggregateModelHealth(input: ModelHealthInput): ModelHealthView[] {
@@ -51,7 +51,7 @@ export function aggregateModelHealth(input: ModelHealthInput): ModelHealthView[]
   return [...mappingsByModel.entries()].map(([model, mappings]) => {
     const routeState = mappings.map((mapping) => {
       const channel = channels.get(mapping.channelId);
-      const circuitOpen = input.channelHealth(mapping.channelId).coolingDown;
+      const circuitOpen = input.mappingHealth(mapping.id).coolingDown;
       const eligible = !!channel?.enabled && input.availableKeyCount(mapping.channelId, input.now) > 0;
       return { mapping, circuitOpen, eligible };
     });
@@ -134,7 +134,7 @@ export function buildModelHealth(
       now,
       availableKeyCount: (channelId, at) =>
         repo.enabledKeys(channelId).filter((key) => key.cooldownUntil <= at).length,
-      channelHealth: (channelId) => router.health(channelId),
+      mappingHealth: (mappingId) => router.health(mappingId),
     }),
   };
 }

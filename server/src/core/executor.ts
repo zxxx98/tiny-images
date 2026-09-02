@@ -132,7 +132,7 @@ export class Executor {
               : await provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
           const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
           this.deps.keyPool.markSuccess(key.keyId);
-          this.deps.router.markSuccess(channel.id);
+          this.deps.router.markSuccess(route.model.id);
           if (quotaLimited) {
             const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
             if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
@@ -147,8 +147,8 @@ export class Executor {
             this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
             continue;
           }
-          // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入渠道熔断
-          this.deps.router.markFailure(channel.id);
+          // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入该模型映射的熔断
+          this.deps.router.markFailure(route.model.id);
           this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
           throw globalPrompt.trim() ? suppressPromptEchoedByError(err, channel.name) : err;
         }
@@ -157,7 +157,7 @@ export class Executor {
       const error =
         lastError ??
         new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
-      this.deps.router.markFailure(channel.id);
+      this.deps.router.markFailure(route.model.id);
       this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
       throw globalPrompt.trim() ? suppressPromptEchoedByError(error, channel.name) : error;
     });

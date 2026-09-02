@@ -216,9 +216,9 @@ describe("GET /v1/model-health statuses", () => {
 
     const degradedByCircuitAvailable = createRoute("degraded-circuit", "degraded-circuit-open", { priority: 10 });
     const degradedByCircuitBackup = createRoute("degraded-circuit", "degraded-circuit-backup", { priority: 0 });
-    router.markFailure(degradedByCircuitAvailable.channel.id);
-    router.markFailure(degradedByCircuitAvailable.channel.id);
-    router.markFailure(degradedByCircuitAvailable.channel.id);
+    router.markFailure(degradedByCircuitAvailable.mapping.id);
+    router.markFailure(degradedByCircuitAvailable.mapping.id);
+    router.markFailure(degradedByCircuitAvailable.mapping.id);
     insertLog({ ts: 25, model: "degraded-circuit", channelId: degradedByCircuitAvailable.channel.id, status: "error", latencyMs: 90 });
     insertLog({ ts: 30, model: "degraded-circuit", channelId: degradedByCircuitBackup.channel.id, status: "ok", latencyMs: 70 });
 
@@ -248,9 +248,9 @@ describe("GET /v1/model-health statuses", () => {
     const coolingKey = createRoute("key-cooling", "key-cooling-route");
     repo.setKeyCooldown(coolingKey.key!.id, Date.now() + 60_000);
     const circuit = createRoute("circuit-only", "circuit-only-route");
-    router.markFailure(circuit.channel.id);
-    router.markFailure(circuit.channel.id);
-    router.markFailure(circuit.channel.id);
+    router.markFailure(circuit.mapping.id);
+    router.markFailure(circuit.mapping.id);
+    router.markFailure(circuit.mapping.id);
 
     const models = (await getHealth()).json().models as Array<Record<string, unknown>>;
     for (const name of ["disabled", "key-cooling"]) {
