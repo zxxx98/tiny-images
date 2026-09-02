@@ -2,11 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 import { hashPassword } from "../core/password.js";
-import type { ChannelType } from "../core/types.js";
+import type { ChannelType, GenerationMode } from "../core/types.js";
 import type { Repo } from "./repo.js";
 
 interface SeedConfig {
-  channels?: { name: string; type?: ChannelType; baseUrl: string; keys?: string[]; timeoutMs?: number; concurrency?: number; editMode?: string; extraHeaders?: Record<string, string> }[];
+  channels?: { name: string; type?: ChannelType; baseUrl: string; keys?: string[]; timeoutMs?: number; concurrency?: number; generationMode?: GenerationMode; editMode?: string; extraHeaders?: Record<string, string> }[];
   models?: { name: string; channel: string; upstream?: string; supportsImageToImage?: boolean; supportsNsfw?: boolean }[];
 }
 
@@ -28,6 +28,7 @@ export function seedIfEmpty(dataDir: string, repo: Repo): void {
       baseUrl: ch.baseUrl,
       timeoutMs: ch.timeoutMs,
       concurrency: ch.concurrency,
+      generationMode: ch.generationMode,
       editMode: ch.editMode as never,
       extraHeaders: ch.extraHeaders,
     });

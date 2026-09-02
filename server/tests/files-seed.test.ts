@@ -45,6 +45,7 @@ channels:
     keys: [sk-a, sk-b]
     timeoutMs: 90000
     concurrency: 4
+    generationMode: chat
 models:
   - name: gpt-image-1
     channel: openai
@@ -57,6 +58,7 @@ models:
     expect(c.type).toBe("ai-horde");
     expect(c.timeoutMs).toBe(90000);
     expect(c.concurrency).toBe(4);
+    expect(c.generationMode).toBe("chat");
     expect(repo.listKeys(c.id)).toHaveLength(2);
     expect(repo.listModels()[0].publicName).toBe("gpt-image-1");
     expect(repo.listModels()[0].upstreamName).toBe("gpt-image-1");

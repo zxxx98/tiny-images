@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { ChannelType, EditMode, ModelAccessPolicy } from "../core/types.js";
+import type { ChannelType, EditMode, GenerationMode, ModelAccessPolicy } from "../core/types.js";
 
 export interface ChannelRow {
   id: number;
@@ -9,6 +9,7 @@ export interface ChannelRow {
   baseUrl: string;
   timeoutMs: number;
   concurrency: number;
+  generationMode: GenerationMode;
   editMode: EditMode;
   extraHeaders: Record<string, string>;
   enabled: boolean;
@@ -125,6 +126,7 @@ export interface ChannelInput {
   baseUrl: string;
   timeoutMs?: number;
   concurrency?: number;
+  generationMode?: GenerationMode;
   editMode?: EditMode;
   extraHeaders?: Record<string, string>;
   enabled?: boolean;
@@ -193,8 +195,8 @@ export class Repo {
     try {
       const res = this.db
         .prepare(
-          `INSERT INTO channels (name, type, base_url, timeout_ms, concurrency, edit_mode, extra_headers, enabled, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO channels (name, type, base_url, timeout_ms, concurrency, generation_mode, edit_mode, extra_headers, enabled, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.name,
@@ -202,6 +204,7 @@ export class Repo {
           input.baseUrl,
           input.timeoutMs ?? 120000,
           input.concurrency ?? 2,
+          input.generationMode ?? "images",
           input.editMode ?? "auto",
           JSON.stringify(input.extraHeaders ?? {}),
           input.enabled === false ? 0 : 1,
@@ -230,8 +233,8 @@ export class Repo {
     const merged = { ...existing, ...patch };
     try {
       this.db
-        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, concurrency = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
-        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.concurrency, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
+        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, concurrency = ?, generation_mode = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
+        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.concurrency, merged.generationMode, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`channel name '${merged.name}' already exists`);
       throw err;
@@ -252,6 +255,7 @@ export class Repo {
       baseUrl: String(row.base_url),
       timeoutMs: Number(row.timeout_ms),
       concurrency: Number(row.concurrency),
+      generationMode: String(row.generation_mode ?? "images") as GenerationMode,
       editMode: String(row.edit_mode) as EditMode,
       extraHeaders: JSON.parse(String(row.extra_headers ?? "{}")) as Record<string, string>,
       enabled: Number(row.enabled) === 1,
