@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as apiModule from "./api";
 import App from "./App";
+import { APP_VERSION, GIT_HASH } from "./version";
 
 function storage(token: string, role: "admin" | "user" | null = "user") {
   return {
@@ -80,5 +81,19 @@ describe("App model status route", () => {
     expect(container.textContent).not.toContain("模型网络探针");
     expect(container.textContent).toContain("登录");
     expect(apiModule.fetchModelHealth).not.toHaveBeenCalled();
+  });
+
+  it("shows the auto-generated version in the footer", async () => {
+    vi.stubGlobal("localStorage", storage("", null));
+    vi.spyOn(apiModule, "fetchSetupNeeded").mockResolvedValue(false);
+
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={["/"]}><App /></MemoryRouter>);
+      await flush();
+    });
+
+    const badge = container.querySelector<HTMLElement>(".version-badge");
+    expect(badge?.textContent).toBe(APP_VERSION);
+    expect(badge?.title).toBe(`Commit ${GIT_HASH}`);
   });
 });

@@ -314,7 +314,8 @@ h3 {
 }
 
 /* ---- 命中计数器 ---- */
-.hit-counter {
+.hit-counter,
+.version-badge {
   display: inline-block;
   background: #000000;
   color: #00ff00;
@@ -325,6 +326,11 @@ h3 {
   border: 2px solid;
   border-color: var(--bevel-in-border);
   box-shadow: var(--bevel-in-shadow);
+}
+
+/* 版本号用柠檬黄，与绿色访客计数区分但同属荧光终端风 */
+.version-badge {
+  color: var(--lemon);
 }
 
 /* ---- 表单 ---- */

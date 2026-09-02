@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
-    "build": "npm run build -w web && npm run build -w server",
+    "version:gen": "node scripts/version.mjs",
+    "build": "npm run version:gen && npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "test": "npm test -w server && npm test -w web"
+    "test": "npm run version:gen && npm test -w server && npm test -w web",
+    "postinstall": "npm run version:gen && git config core.hooksPath .githooks"
   },
   "engines": {
     "node": ">=22"

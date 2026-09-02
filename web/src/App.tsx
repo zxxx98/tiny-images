@@ -1,6 +1,7 @@
 import { Component, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, QUOTA_EVENT, setRole, type Me } from "./api";
+import { APP_VERSION, GIT_HASH } from "./version";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
@@ -214,6 +215,9 @@ export default function App() {
       </main>
       <footer className="app-footer">
         <span className="hit-counter">Visitors: 0001997 | Since 1995</span>
+        <span className="hit-counter version-badge" title={`Commit ${GIT_HASH}`}>
+          {APP_VERSION}
+        </span>
         <span>Best viewed in Netscape Navigator 3.0 at 800×600</span>
       </footer>
     </div>

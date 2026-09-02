@@ -1,0 +1,4 @@
+#!/bin/sh
+# 每次提交后重新生成版本号（基于提交计数，天然自增）
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+node "$root/scripts/version.mjs" >/dev/null 2>&1 || true

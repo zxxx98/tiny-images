@@ -39,6 +39,10 @@ npm test               # Vitest 全量测试
 node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真实渠道）
 ```
 
+### 版本号自增
+
+版本号 = `package.json` 的 major.minor + **git 提交数**（作为 patch），因此每次提交自动 +1（如 `v0.1.162`）。`scripts/version.mjs` 负责生成 `web/src/version.ts`（已 gitignore），由 `post-commit` 钩子（`core.hooksPath` 在 `npm install` 时自动配置）和构建/测试脚本触发，页脚以荧光计数器风格展示当前版本与构建号。
+
 ## 配置
 
 环境变量：
