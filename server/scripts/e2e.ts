@@ -29,7 +29,7 @@ const upstreamPort = (upstream.server.address() as { port: number }).port;
 // ---- tiny-images ----
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-"));
 const repo = new Repo(openDb(dataDir));
-const provider = new OpenAICompatProvider();
+const providers = new Map([["openai-compat", new OpenAICompatProvider()]]);
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
 const app = await buildApp({
@@ -37,8 +37,8 @@ const app = await buildApp({
   repo,
   router,
   keyPool,
-  provider,
-  executor: new Executor({ router, keyPool, provider, repo }),
+  providers,
+  executor: new Executor({ router, keyPool, providers, repo }),
   jobManager: new JobManager(),
   logger: false,
   webDist: path.resolve(import.meta.dirname, "../../web/dist"),
@@ -85,9 +85,9 @@ const gen = await fetch(`${base}/v1/images/generations`, {
   headers: { "content-type": "application/json", authorization: `Bearer ${loginRes.token}` },
   body: JSON.stringify({ model: "img-1", prompt: "a white cat", n: 1 }),
 });
-const genBody = (await gen.json()) as { created: number; data: { b64_json: string }[]; usage: { total_tokens: number } };
-console.log("[e2e] generations:", gen.status, "channel:", gen.headers.get("x-tiny-channel"), "usage:", genBody.usage.total_tokens, "b64 length:", genBody.data[0].b64_json.length);
-console.assert(gen.status === 200 && genBody.data[0].b64_json === PNG_B64, "generation failed");
+const genBody = (await gen.json()) as { created?: number; data?: { b64_json?: string }[]; usage?: { total_tokens: number } };
+console.log("[e2e] generations:", gen.status, "channel:", gen.headers.get("x-tiny-channel"), "usage:", genBody.usage?.total_tokens ?? "-", "b64 length:", genBody.data?.[0]?.b64_json?.length ?? "-");
+console.assert(gen.status === 200 && genBody.data?.[0]?.b64_json === PNG_B64, "generation failed");
 
 // ---- models 列表 ----
 const models = await (await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${loginRes.token}` } })).json();

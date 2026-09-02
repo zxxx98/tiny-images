@@ -124,7 +124,7 @@ describe("Admin logs tab", () => {
     HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) {
       clicked.push(this.download);
     };
-    const fetchMock = vi.fn(async (url: string | URL) => {
+    const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
       expect(String(url)).toContain("/admin/logs/export?limit=500");
       return new Response("\uFEFFid,ts\r\n", { status: 200, headers: { "content-type": "text/csv" } });
     });

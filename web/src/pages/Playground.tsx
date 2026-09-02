@@ -216,7 +216,7 @@ export default function Playground() {
 
   const reloadFavorites = (): void => {
     fetchFavorites()
-      .then((rows) => setFavorites(rows))
+      .then((rows) => setFavorites(Array.isArray(rows) ? rows : []))
       .catch(() => setFavorites([]));
   };
 

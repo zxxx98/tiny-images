@@ -650,7 +650,7 @@ function ApiKeysTab() {
 
 // ---- 日志 ----
 
-interface AppliedLogFilter {
+export interface AppliedLogFilter {
   model?: string;
   q?: string;
   status?: string;

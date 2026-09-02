@@ -75,7 +75,7 @@ describe("Playground prompt favorites", () => {
       );
       await flush();
     });
-    const summary = Array.from(container.querySelectorAll("summary")).find((s) => s.textContent?.includes("收藏夹"))!;
+    const summary = Array.from(container.querySelectorAll("summary")).find((s) => s.textContent?.includes("收藏夹"))! as HTMLElement;
     await act(async () => summary.click());
     await flush();
   }
@@ -85,7 +85,7 @@ describe("Playground prompt favorites", () => {
     expect(container.textContent).toContain("收藏夹（2）");
     expect(container.textContent).toContain("一只橘猫在窗台晒太阳");
 
-    const item = Array.from(container.querySelectorAll(".favorite-content")).find(
+    const item = Array.from(container.querySelectorAll<HTMLElement>(".favorite-content")).find(
       (b) => b.textContent === "一只橘猫在窗台晒太阳",
     )!;
     await act(async () => item.click());

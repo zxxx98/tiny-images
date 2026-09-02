@@ -140,14 +140,21 @@ describe("application settings", () => {
 });
 
 describe("logs", () => {
-  it("inserts, lists recent, prunes to 50", () => {
-    for (let i = 0; i < 55; i++) {
-      repo.insertLog({ ts: i, model: "m", channelId: 1, apiKeyId: null, status: "ok", httpStatus: 200, latencyMs: 10, errorMessage: null });
+  it("inserts, lists recent, prunes to 500, and filters", () => {
+    for (let i = 0; i < 505; i++) {
+      repo.insertLog({ ts: i, model: i % 2 ? "m-fast" : "m-slow", channelId: 1, apiKeyId: null, status: i % 2 ? "ok" : "error", httpStatus: 200, latencyMs: 10, errorMessage: i % 2 ? null : "boom" });
     }
-    const logs = repo.recentLogs(100);
-    expect(logs).toHaveLength(50);
-    expect(logs[0].ts).toBe(54);
+    const logs = repo.recentLogs(1000);
+    expect(logs).toHaveLength(500);
+    expect(logs[0].ts).toBe(504);
     expect(logs.at(-1)?.ts).toBe(5);
+
+    const errors = repo.listLogs(10, { status: "error" });
+    expect(errors.every((l) => l.status === "error")).toBe(true);
+    const fast = repo.listLogs(10, { model: "FAST" });
+    expect(fast.every((l) => l.model === "m-fast")).toBe(true);
+    const byQ = repo.listLogs(10, { q: "BOOM" });
+    expect(byQ.every((l) => l.status === "error")).toBe(true);
   });
 });
 

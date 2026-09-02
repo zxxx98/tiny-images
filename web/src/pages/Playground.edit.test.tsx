@@ -30,6 +30,7 @@ describe("Playground edit mode", () => {
     localStorage.clear();
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
     vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false });
+    vi.spyOn(apiModule, "fetchFavorites").mockResolvedValue([]);
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => `blob:preview-${++objectUrl}`) });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
     Object.defineProperty(window, "scrollTo", { configurable: true, value: vi.fn() });
