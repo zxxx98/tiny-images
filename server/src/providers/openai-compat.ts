@@ -23,6 +23,7 @@ export class OpenAICompatProvider implements ImageProvider {
   readonly kind = "openai-compat";
 
   async generate(req: UnifiedGenRequest, ctx: CallContext): Promise<UnifiedImageResult> {
+    if (ctx.channel.generationMode === "chat") return this.generateChat(req, ctx);
     // response_format 不透传：由网关本地做 b64↔url 转换，规避 gpt-image-1 等不接受该参数的上游。
     const payload: Record<string, unknown> = {
       model: ctx.upstreamModel,
@@ -34,6 +35,22 @@ export class OpenAICompatProvider implements ImageProvider {
     if (req.quality !== undefined) payload.quality = req.quality;
     const json = await this.postJson(ctx, "/images/generations", payload);
     return parseImagesResponse(json, ctx.channel.name);
+  }
+
+  private async generateChat(req: UnifiedGenRequest, ctx: CallContext): Promise<UnifiedImageResult> {
+    const payload: Record<string, unknown> = {
+      modalities: ["text", "image"],
+      n: req.n,
+      ...req.passthrough,
+    };
+    if (req.size !== undefined) payload.size = req.size;
+    if (req.quality !== undefined) payload.quality = req.quality;
+    payload.model = ctx.upstreamModel;
+    payload.messages = [{ role: "user", content: req.prompt }];
+    delete payload.response_format;
+    delete payload.stream;
+    const json = await this.postJson(ctx, "/chat/completions", payload);
+    return parseChatImagesResponse(json, ctx.channel.name);
   }
 
   async edit(req: UnifiedEditRequest, ctx: CallContext): Promise<UnifiedImageResult> {
@@ -181,4 +198,191 @@ export function parseImagesResponse(json: unknown, channelName: string): Unified
   }));
   const created = typeof obj.created === "number" ? obj.created : Math.floor(Date.now() / 1000);
   return { created, images, raw: json };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function parseImageValue(value: unknown): { key: string; image: { b64: string } | { url: string } } | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  const dataMatch = /^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/.exec(normalized);
+  if (dataMatch) {
+    const b64 = dataMatch[1];
+    const validBase64 = b64.length > 0
+      && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64);
+    if (!validBase64) return null;
+    return { key: normalized, image: { b64 } };
+  }
+  try {
+    const url = new URL(normalized);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return { key: normalized, image: { url: normalized } };
+  } catch {
+    return null;
+  }
+}
+
+function markdownImageValues(content: string): string[] {
+  const values: string[] = [];
+  let scannedThrough = 0;
+  const closingParenAfterOptionalTitle = (start: number): number | null => {
+    let pos = start;
+    while (/\s/.test(content[pos] ?? "")) pos += 1;
+    scannedThrough = Math.max(scannedThrough, pos);
+    if (content[pos] === ")") return pos;
+    const opener = content[pos];
+    if (opener !== "\"" && opener !== "'" && opener !== "(") return null;
+    const closer = opener === "(" ? ")" : opener;
+    pos += 1;
+    while (pos < content.length) {
+      if (content[pos] === "\\") {
+        pos += 2;
+        scannedThrough = Math.max(scannedThrough, pos);
+        continue;
+      }
+      if (content[pos] === closer) break;
+      pos += 1;
+    }
+    scannedThrough = Math.max(scannedThrough, pos);
+    if (content[pos] !== closer) return null;
+    pos += 1;
+    while (/\s/.test(content[pos] ?? "")) pos += 1;
+    scannedThrough = Math.max(scannedThrough, pos);
+    return content[pos] === ")" ? pos : null;
+  };
+
+  let searchFrom = 0;
+  while (searchFrom < content.length) {
+    const start = content.indexOf("![", searchFrom);
+    if (start < 0) break;
+    let labelEnd = start + 2;
+    while (labelEnd < content.length && content[labelEnd] !== "]") {
+      labelEnd += content[labelEnd] === "\\" ? 2 : 1;
+    }
+    scannedThrough = Math.max(scannedThrough, labelEnd);
+    if (content[labelEnd] !== "]") break;
+    if (content[labelEnd + 1] !== "(") {
+      searchFrom = labelEnd + 1;
+      continue;
+    }
+
+    let pos = labelEnd + 2;
+    while (/\s/.test(content[pos] ?? "")) pos += 1;
+    let destination = "";
+    let linkEnd: number | null = null;
+    if (content[pos] === "<") {
+      pos += 1;
+      while (pos < content.length && content[pos] !== ">" && content[pos] !== "\n" && content[pos] !== "\r") {
+        if (content[pos] === "\\" && pos + 1 < content.length) pos += 1;
+        destination += content[pos];
+        pos += 1;
+      }
+      scannedThrough = Math.max(scannedThrough, pos);
+      if (content[pos] === ">") linkEnd = closingParenAfterOptionalTitle(pos + 1);
+    } else {
+      let depth = 0;
+      while (pos < content.length) {
+        const char = content[pos];
+        if (char === "\n" || char === "\r") break;
+        if (char === "\\" && pos + 1 < content.length) {
+          destination += content[pos + 1];
+          pos += 2;
+          continue;
+        }
+        if (char === "(") {
+          depth += 1;
+          destination += char;
+          pos += 1;
+          continue;
+        }
+        if (char === ")") {
+          if (depth === 0) {
+            linkEnd = pos;
+            break;
+          }
+          depth -= 1;
+          destination += char;
+          pos += 1;
+          continue;
+        }
+        if (/\s/.test(char) && depth === 0) {
+          linkEnd = closingParenAfterOptionalTitle(pos);
+          break;
+        }
+        destination += char;
+        pos += 1;
+      }
+      scannedThrough = Math.max(scannedThrough, pos);
+    }
+    if (destination && linkEnd !== null) {
+      values.push(destination);
+      searchFrom = linkEnd + 1;
+    } else {
+      searchFrom = Math.max(start + 2, scannedThrough + 1);
+    }
+  }
+  return values;
+}
+
+export function parseChatImagesResponse(json: unknown, channelName: string): UnifiedImageResult {
+  const obj = record(json);
+  if (!obj || !Array.isArray(obj.choices)) {
+    throw new UpstreamError(502, "upstream_error", `channel '${channelName}' returned malformed chat image response`);
+  }
+
+  const images: UnifiedImageResult["images"] = [];
+  const seen = new Set<string>();
+  const addValue = (value: unknown) => {
+    const parsed = parseImageValue(value);
+    if (!parsed || seen.has(parsed.key)) return;
+    seen.add(parsed.key);
+    images.push(parsed.image);
+  };
+  const addStringContent = (content: string) => {
+    for (const value of markdownImageValues(content)) addValue(value);
+    addValue(content);
+  };
+  const collect = (value: unknown) => {
+    const container = record(value);
+    if (!container) return;
+    if (Array.isArray(container.images)) {
+      for (const image of container.images) {
+        const imageUrl = record(record(image)?.image_url)?.url;
+        addValue(imageUrl);
+      }
+    }
+    if (Array.isArray(container.content)) {
+      for (const item of container.content) {
+        if (typeof item === "string") {
+          addStringContent(item);
+          continue;
+        }
+        const contentItem = record(item);
+        if (!contentItem) continue;
+        addValue(record(contentItem.image_url)?.url);
+        addValue(contentItem.image_url);
+        addValue(contentItem.data);
+      }
+    } else if (typeof container.content === "string") {
+      addStringContent(container.content);
+    }
+  };
+
+  for (const choice of obj.choices) {
+    const choiceObj = record(choice);
+    if (!choiceObj) continue;
+    collect(choiceObj.message);
+    collect(choiceObj.delta);
+  }
+  if (images.length === 0) {
+    throw new UpstreamError(502, "upstream_error", `channel '${channelName}' returned no recognizable chat image`);
+  }
+
+  const created = typeof obj.created === "number" ? obj.created : Math.floor(Date.now() / 1000);
+  const raw = Object.hasOwn(obj, "usage") ? { usage: obj.usage } : undefined;
+  return { created, images, ...(raw ? { raw } : {}) };
 }
