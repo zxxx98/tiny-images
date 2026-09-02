@@ -78,6 +78,16 @@ export interface UnifiedEditRequest {
   providerOptions?: ProviderOptions;
 }
 
+// OpenAI images variations：只有一张源图，没有 prompt
+export interface UnifiedVariationRequest {
+  n: number;
+  size?: string;
+  /** "auto" = 客户端未指定，保持上游返回的原生格式 */
+  responseFormat: "url" | "b64_json" | "auto";
+  images: IncomingImage[];
+  passthrough: Record<string, unknown>;
+}
+
 export interface UnifiedImage {
   b64?: string;
   url?: string;
@@ -102,5 +112,7 @@ export interface ImageProvider {
   kind: string;
   generate(req: UnifiedGenRequest, ctx: CallContext): Promise<UnifiedImageResult>;
   edit(req: UnifiedEditRequest, ctx: CallContext): Promise<UnifiedImageResult>;
+  /** images variations：不支持该能力的 provider 可不实现（executor 会返回 400） */
+  variation?(req: UnifiedVariationRequest, ctx: CallContext): Promise<UnifiedImageResult>;
   test(channel: ChannelConfig, apiKey: string | null): Promise<{ ok: boolean; message: string }>;
 }

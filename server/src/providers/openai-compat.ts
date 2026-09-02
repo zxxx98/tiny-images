@@ -6,6 +6,7 @@ import type {
   UnifiedEditRequest,
   UnifiedGenRequest,
   UnifiedImageResult,
+  UnifiedVariationRequest,
 } from "../core/types.js";
 
 export function joinUrl(baseUrl: string, path: string): string {
@@ -115,6 +116,41 @@ export class OpenAICompatProvider implements ImageProvider {
     payload.image = req.images.length === 1 ? toDataUrl(req.images[0]) : req.images.map(toDataUrl);
     if (req.mask) payload.mask = toDataUrl(req.mask);
     const json = await this.postJson(ctx, "/images/edits", payload);
+    return parseImagesResponse(json, ctx.channel.name);
+  }
+
+  // 仅 images 模式的渠道支持 /images/variations；chat 模式没有对应语义，快速失败
+  async variation(req: UnifiedVariationRequest, ctx: CallContext): Promise<UnifiedImageResult> {
+    if (ctx.channel.generationMode === "chat") {
+      throw new UpstreamError(400, "invalid_request_error", `channel '${ctx.channel.name}' uses the Chat API and does not support image variations`);
+    }
+    const form = new FormData();
+    form.append("model", ctx.upstreamModel);
+    form.append("n", String(req.n));
+    if (req.size !== undefined) form.append("size", req.size);
+    for (const [k, v] of Object.entries(req.passthrough)) {
+      if (typeof v === "string" || typeof v === "number") form.append(k, String(v));
+    }
+    for (const img of req.images) {
+      form.append("image", toBlob(img.data, img.mimeType), img.filename || "image.png");
+    }
+    const timeout = AbortSignal.timeout(ctx.channel.timeoutMs);
+    const signal = AbortSignal.any([ctx.signal, timeout]);
+    let res: Response;
+    try {
+      res = await fetch(joinUrl(ctx.channel.baseUrl, "/images/variations"), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ctx.apiKey}`,
+          ...ctx.channel.extraHeaders,
+        },
+        body: form,
+        signal,
+      });
+    } catch (err) {
+      throw wrapNetworkError(err, ctx.channel.name);
+    }
+    const json = await readJsonResponse(res, ctx.channel.name);
     return parseImagesResponse(json, ctx.channel.name);
   }
 

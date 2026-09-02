@@ -1,4 +1,4 @@
-import { ModelNotFoundError, QuotaError, UpstreamError } from "./errors.js";
+import { ModelNotFoundError, QuotaError, UpstreamError, httpError } from "./errors.js";
 import type { KeyPool } from "./keyPool.js";
 import type { ModelRouter } from "./router.js";
 import type {
@@ -7,6 +7,7 @@ import type {
   UnifiedGenRequest,
   UnifiedImageResult,
   ModelAccessPolicy,
+  UnifiedVariationRequest,
 } from "./types.js";
 import type { ChannelRow, Repo } from "../store/repo.js";
 import { providerFor, type ProviderRegistry } from "../providers/registry.js";
@@ -87,17 +88,28 @@ export class Executor {
     return this.call(publicName, { kind: "edit", req }, opts);
   }
 
+  variation(publicName: string, req: UnifiedVariationRequest, opts: ExecutorOptions): Promise<ExecutorResult> {
+    return this.call(publicName, { kind: "variation", req }, opts);
+  }
+
   private async call(
     publicName: string,
-    payload: { kind: "generate"; req: UnifiedGenRequest } | { kind: "edit"; req: UnifiedEditRequest },
+    payload:
+      | { kind: "generate"; req: UnifiedGenRequest }
+      | { kind: "edit"; req: UnifiedEditRequest }
+      | { kind: "variation"; req: UnifiedVariationRequest },
     opts: ExecutorOptions,
   ): Promise<ExecutorResult> {
     const route = this.deps.router.resolve(publicName, opts.modelAccess);
     if (!route) throw new ModelNotFoundError(publicName);
     const { channel } = route;
     const provider = providerFor(this.deps.providers, channel.type);
+    if (payload.kind === "variation" && !provider.variation) {
+      throw httpError(400, `channel type '${provider.kind}' does not support image variations`);
+    }
     const globalPrompt = this.deps.repo.getAppSettings().globalPrompt;
-    const upstreamRequest = withGlobalPrompt(payload.req, globalPrompt);
+    // variations 没有 prompt，不参与全局提示词前置
+    const upstreamRequest = payload.kind === "variation" ? payload.req : withGlobalPrompt(payload.req, globalPrompt);
 
     // 额度：仅普通用户且配置了 quota_total 时生效；按成功生成的图片张数扣减
     const user = opts.callerUserId ? this.deps.repo.getUser(opts.callerUserId) : null;
@@ -129,7 +141,9 @@ export class Executor {
           const upstreamResult =
             payload.kind === "generate"
               ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
-              : await provider.edit(upstreamRequest as UnifiedEditRequest, ctx);
+              : payload.kind === "edit"
+                ? await provider.edit(upstreamRequest as UnifiedEditRequest, ctx)
+                : await provider.variation!(upstreamRequest as UnifiedVariationRequest, ctx);
           const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
           this.deps.keyPool.markSuccess(key.keyId);
           this.deps.router.markSuccess(route.model.id);

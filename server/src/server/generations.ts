@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ValidationError } from "../core/errors.js";
-import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult } from "../core/types.js";
+import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult, UnifiedVariationRequest } from "../core/types.js";
 import { conformImages, localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
 import { streamImageFlow } from "./stream.js";
@@ -65,14 +65,14 @@ export function requestSignal(req: FastifyRequest, reply: FastifyReply): AbortSi
   return ac.signal;
 }
 
-type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest;
+type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest | UnifiedVariationRequest;
 
 export async function finishSync(
   ctx: AppContext,
   req: FastifyRequest,
   reply: FastifyReply,
   model: string,
-  kind: "generate" | "edit",
+  kind: "generate" | "edit" | "variation",
   payload: UnifiedPayload,
 ): Promise<unknown> {
   const signal = requestSignal(req, reply);
@@ -85,7 +85,9 @@ export async function finishSync(
   const r =
     kind === "generate"
       ? await ctx.deps.executor.generate(model, payload as UnifiedGenRequest, routeOpts)
-      : await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, routeOpts);
+      : kind === "edit"
+        ? await ctx.deps.executor.edit(model, payload as UnifiedEditRequest, routeOpts)
+        : await ctx.deps.executor.variation(model, payload as UnifiedVariationRequest, routeOpts);
   const images = await conformImages({
     images: r.result.images,
     wanted: payload.responseFormat,
@@ -108,10 +110,10 @@ export function registerGenerations(ctx: AppContext): void {
     const started = Date.now();
     try {
       const body = await finishSync(ctx, req, reply, model, "generate", genReq);
-      await recordGeneration(ctx, req, model, genReq, "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
+      await recordGeneration(ctx, req, model, genRecordMeta(genReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
       return body;
     } catch (err) {
-      await recordGeneration(ctx, req, model, genReq, "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
+      await recordGeneration(ctx, req, model, genRecordMeta(genReq), "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
       throw err;
     }
   });
@@ -138,7 +140,7 @@ export async function recordGeneration(
   ctx: AppContext,
   req: FastifyRequest,
   model: string,
-  genReq: UnifiedGenRequest | UnifiedEditRequest,
+  meta: GenRecordMeta,
   status: "ok" | "error",
   latencyMs: number,
   errorMessage: string | null,
@@ -150,13 +152,8 @@ export async function recordGeneration(
       apiKeyId: req.callerApiKeyId ?? null,
       userId: req.callerUserId ?? null,
       model,
-      prompt: genReq.prompt,
-      params: JSON.stringify({
-        n: genReq.n,
-        size: genReq.size,
-        quality: "quality" in genReq ? genReq.quality : undefined,
-        responseFormat: genReq.responseFormat,
-      }),
+      prompt: meta.prompt,
+      params: JSON.stringify(meta.params),
       status,
       channelId: null,
       latencyMs,
@@ -166,4 +163,44 @@ export async function recordGeneration(
   } catch {
     // 历史落库失败不影响响应
   }
+}
+
+export interface GenRecordMeta {
+  prompt: string;
+  params: Record<string, unknown>;
+}
+
+export function genRecordMeta(genReq: UnifiedGenRequest): GenRecordMeta {
+  return {
+    prompt: genReq.prompt,
+    params: {
+      n: genReq.n,
+      size: genReq.size,
+      quality: genReq.quality,
+      responseFormat: genReq.responseFormat,
+    },
+  };
+}
+
+export function editRecordMeta(editReq: UnifiedEditRequest): GenRecordMeta {
+  return {
+    prompt: editReq.prompt,
+    params: {
+      n: editReq.n,
+      size: editReq.size,
+      responseFormat: editReq.responseFormat,
+    },
+  };
+}
+
+export function variationRecordMeta(varReq: UnifiedVariationRequest): GenRecordMeta {
+  return {
+    prompt: "",
+    params: {
+      kind: "variation",
+      n: varReq.n,
+      size: varReq.size,
+      responseFormat: varReq.responseFormat,
+    },
+  };
 }

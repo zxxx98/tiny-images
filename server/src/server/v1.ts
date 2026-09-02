@@ -1,6 +1,7 @@
 import type { AppContext } from "../app.js";
 import { registerGenerations } from "./generations.js";
 import { registerEdits } from "./edits.js";
+import { registerVariations } from "./variations.js";
 import { registerHistory } from "./history.js";
 import { buildModelHealth } from "./modelHealth.js";
 import { registerUpscale } from "./upscale.js";
@@ -31,6 +32,7 @@ export function registerV1(ctx: AppContext): void {
   });
   registerGenerations(ctx);
   registerEdits(ctx);
+  registerVariations(ctx);
   registerHistory(ctx);
   registerUpscale(ctx);
   // 流式（Task 12）在后续接入
