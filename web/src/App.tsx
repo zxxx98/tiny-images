@@ -7,6 +7,7 @@ import Guide from "./pages/Guide";
 import History from "./pages/History";
 import Login from "./pages/Login";
 import Playground from "./pages/Playground";
+import Register from "./pages/Register";
 import Setup from "./pages/Setup";
 import Status from "./pages/Status";
 
@@ -51,6 +52,7 @@ const TITLES: Record<string, string> = {
   "/admin": "管理后台",
   "/guide": "API 指南",
   "/login": "登录",
+  "/register": "注册",
 };
 
 function Marquee() {
@@ -175,6 +177,7 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/guide" element={<Guide />} />
             <Route

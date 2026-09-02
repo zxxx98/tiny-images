@@ -21,6 +21,19 @@ function requirePromptOptimizer(value: unknown): { baseUrl: string; apiKey: stri
   };
 }
 
+// 用户注册配置：enabled 为布尔，dailyQuota 为正整数（新注册账号的默认每日额度）
+function requireRegistration(value: unknown): { enabled: boolean; dailyQuota: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw httpError(400, "'registration' must be an object");
+  }
+  const source = value as Record<string, unknown>;
+  if (typeof source.enabled !== "boolean") throw httpError(400, "'registration.enabled' must be a boolean");
+  if (typeof source.dailyQuota !== "number" || !Number.isInteger(source.dailyQuota) || source.dailyQuota <= 0) {
+    throw httpError(400, "'registration.dailyQuota' must be a positive integer");
+  }
+  return { enabled: source.enabled, dailyQuota: source.dailyQuota };
+}
+
 export function registerSettings(ctx: AppContext): void {
   ctx.app.get("/admin/settings", { preHandler: ctx.requireAdmin }, async () => ctx.deps.repo.getAppSettings());
 
@@ -32,6 +45,7 @@ export function registerSettings(ctx: AppContext): void {
       ...(body.promptOptimizer === undefined
         ? {}
         : { promptOptimizer: requirePromptOptimizer(body.promptOptimizer) }),
+      ...(body.registration === undefined ? {} : { registration: requireRegistration(body.registration) }),
     });
   });
 

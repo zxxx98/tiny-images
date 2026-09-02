@@ -114,11 +114,20 @@ export interface PromptOptimizerSettings {
   model: string;
 }
 
+// 用户自助注册：enabled 控制注册入口开关，dailyQuota 为新注册账号的默认每日额度
+export interface RegistrationSettings {
+  enabled: boolean;
+  dailyQuota: number;
+}
+
+export const DEFAULT_REGISTRATION_DAILY_QUOTA = 30;
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
   promptOptimizer: PromptOptimizerSettings;
+  registration: RegistrationSettings;
 }
 
 export class ConflictError extends Error {
@@ -151,6 +160,11 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
 }
 
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
 export class Repo {
   private db: DatabaseSync;
 
@@ -179,6 +193,10 @@ export class Repo {
         apiKey: values.get("prompt_optimizer_api_key") ?? "",
         model: values.get("prompt_optimizer_model") ?? "",
       },
+      registration: {
+        enabled: values.get("registration_enabled") === "1",
+        dailyQuota: parsePositiveInt(values.get("registration_daily_quota"), DEFAULT_REGISTRATION_DAILY_QUOTA),
+      },
     };
   }
 
@@ -186,11 +204,13 @@ export class Repo {
     globalPrompt: string;
     announcement: string;
     promptOptimizer?: PromptOptimizerSettings;
+    registration?: RegistrationSettings;
   }): AppSettings {
     const current = this.getAppSettings();
     const announcementVersion =
       current.announcement === input.announcement ? current.announcementVersion : current.announcementVersion + 1;
     const optimizer = input.promptOptimizer ?? current.promptOptimizer;
+    const registration = input.registration ?? current.registration;
     const put = this.db.prepare(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
@@ -202,6 +222,8 @@ export class Repo {
       put.run("prompt_optimizer_base_url", optimizer.baseUrl);
       put.run("prompt_optimizer_api_key", optimizer.apiKey);
       put.run("prompt_optimizer_model", optimizer.model);
+      put.run("registration_enabled", registration.enabled ? "1" : "0");
+      put.run("registration_daily_quota", String(registration.dailyQuota));
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");

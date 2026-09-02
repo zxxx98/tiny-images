@@ -42,12 +42,14 @@ describe("SettingsTab", () => {
       announcement: "notice",
       announcementVersion: 1,
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
     apiMocks.saveSettings.mockResolvedValue({
       globalPrompt: "new",
       announcement: "notice",
       announcementVersion: 1,
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
     await renderTab();
 
@@ -66,6 +68,7 @@ describe("SettingsTab", () => {
       globalPrompt: "new",
       announcement: "notice",
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
     expect(container.textContent).toContain("设置已保存");
   });
@@ -76,12 +79,14 @@ describe("SettingsTab", () => {
       announcement: "",
       announcementVersion: 0,
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
     apiMocks.saveSettings.mockResolvedValue({
       globalPrompt: "",
       announcement: "",
       announcementVersion: 0,
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-2", model: "gpt-4o-mini" },
+      registration: { enabled: true, dailyQuota: 30 },
     });
     await renderTab();
 
@@ -105,13 +110,83 @@ describe("SettingsTab", () => {
       globalPrompt: "",
       announcement: "",
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-2", model: "gpt-4o-mini" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
+  });
+
+  it("toggles registration and saves the daily quota", async () => {
+    apiMocks.fetchSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
+    });
+    apiMocks.saveSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: true, dailyQuota: 45 },
+    });
+    await renderTab();
+
+    const toggle = container.querySelector<HTMLInputElement>("#settings-registration-enabled")!;
+    expect(toggle.checked).toBe(false);
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.checked).toBe(true);
+
+    const quota = container.querySelector<HTMLInputElement>("#settings-registration-daily-quota")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(quota, "45");
+      quota.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.saveSettings).toHaveBeenCalledWith({
+      globalPrompt: "",
+      announcement: "",
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: true, dailyQuota: 45 },
+    });
+    expect(container.textContent).toContain("设置已保存");
+  });
+
+  it("rejects a non-positive registration quota without saving", async () => {
+    apiMocks.fetchSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
+    });
+    await renderTab();
+
+    const quota = container.querySelector<HTMLInputElement>("#settings-registration-daily-quota")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(quota, "0");
+      quota.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.saveSettings).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("注册用户每日额度必须是正整数");
   });
 
   it("keeps saving disabled after a load failure and retries safely", async () => {
     apiMocks.fetchSettings
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce({ globalPrompt: "existing", announcement: "notice", announcementVersion: 1 });
+      .mockResolvedValueOnce({ globalPrompt: "existing", announcement: "notice", announcementVersion: 1, registration: { enabled: false, dailyQuota: 30 } });
     await renderTab();
 
     const saveButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "保存设置")!;

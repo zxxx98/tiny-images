@@ -744,6 +744,44 @@ textarea:disabled {
   margin-top: 0;
 }
 
+/* ---- 注册页 ---- */
+.register-alt {
+  margin: 0;
+  text-align: center;
+}
+
+.register-alt a {
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.register-closed-tip {
+  margin: 0;
+  text-align: center;
+}
+
+.register-link {
+  text-align: center;
+}
+
+/* ---- 设置页复选框行 ---- */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.check-row .check-label {
+  margin-top: 0;
+  cursor: pointer;
+}
+
 /* ---- 选项卡 ---- */
 .tabs {
   display: flex;

@@ -1,6 +1,7 @@
 import { signJwt } from "../core/jwt.js";
 import { hashPassword, verifyPassword } from "../core/password.js";
 import { httpError } from "../core/errors.js";
+import { ConflictError } from "../store/repo.js";
 import type { AppContext } from "../app.js";
 import { requireBody, requireStr } from "./admin.js";
 
@@ -33,6 +34,34 @@ export function registerAuthRoutes(ctx: AppContext, jwtSecret: string): void {
     }
     const token = signJwt({ uid: user.id, role: user.role }, jwtSecret, 7 * 24 * 3600);
     return { token, role: user.role, email: user.email };
+  });
+
+  // ---- 用户自助注册（设置页开启后可用，无需登录）----
+
+  ctx.app.get("/admin/auth/register", async () => ({ enabled: repo.getAppSettings().registration.enabled }));
+
+  ctx.app.post("/admin/auth/register", async (req, reply) => {
+    const settings = repo.getAppSettings();
+    if (!settings.registration.enabled) throw httpError(403, "user registration is disabled");
+    const b = requireBody(req);
+    const email = requireStr(b, "email").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw httpError(400, "'email' must be a valid email address");
+    const password = requireStr(b, "password");
+    if (password.length < 6) throw httpError(400, "'password' must be at least 6 characters");
+    let user;
+    try {
+      user = repo.createUser({
+        email,
+        passwordHash: hashPassword(password),
+        role: "user",
+        quotaTotal: settings.registration.dailyQuota,
+      });
+    } catch (err) {
+      if (err instanceof ConflictError) throw httpError(409, `user '${email}' already exists`);
+      throw err;
+    }
+    const token = signJwt({ uid: user.id, role: user.role }, jwtSecret, 7 * 24 * 3600);
+    return await reply.code(201).send({ token, role: user.role, email: user.email });
   });
 
   ctx.app.get("/admin/auth/me", { preHandler: ctx.requireUser }, async (req) => {

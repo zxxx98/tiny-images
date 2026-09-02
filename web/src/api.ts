@@ -26,6 +26,25 @@ export async function loginRequest(email: string, password: string): Promise<{ t
   return { token: parsed.token, role: parsed.role!, email: parsed.email! };
 }
 
+// 注册入口开关（管理员在设置页控制）；未开启时登录页不展示注册入口
+export async function fetchRegistrationEnabled(): Promise<boolean> {
+  const res = await fetch("/admin/auth/register");
+  const parsed = (await res.json().catch(() => ({}))) as { enabled?: boolean };
+  return !!parsed.enabled;
+}
+
+// 用户自助注册：成功即视为已登录（服务端直接返回 token）
+export async function registerRequest(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+  const res = await fetch("/admin/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
+  if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });
+  return { token: parsed.token, role: parsed.role!, email: parsed.email! };
+}
+
 export interface Me {
   role: "admin" | "user";
   email: string;
@@ -238,17 +257,27 @@ export interface PromptOptimizerSettings {
   model: string;
 }
 
+export interface RegistrationSettings {
+  enabled: boolean;
+  dailyQuota: number;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
   promptOptimizer: PromptOptimizerSettings;
+  registration: RegistrationSettings;
 }
 
 export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admin/settings");
 
-export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement"> & { promptOptimizer?: PromptOptimizerSettings }): Promise<AppSettings> =>
-  api<AppSettings>("/admin/settings", { method: "PUT", body: input });
+export const saveSettings = (
+  input: Pick<AppSettings, "globalPrompt" | "announcement"> & {
+    promptOptimizer?: PromptOptimizerSettings;
+    registration?: RegistrationSettings;
+  },
+): Promise<AppSettings> => api<AppSettings>("/admin/settings", { method: "PUT", body: input });
 
 export interface Announcement {
   announcement: string;

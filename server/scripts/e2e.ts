@@ -29,7 +29,7 @@ const upstreamPort = (upstream.server.address() as { port: number }).port;
 // ---- tiny-images ----
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-"));
 const repo = new Repo(openDb(dataDir));
-const provider = new OpenAICompatProvider();
+const providers = new Map([["openai-compat", new OpenAICompatProvider()]]);
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);
 const app = await buildApp({
@@ -37,8 +37,8 @@ const app = await buildApp({
   repo,
   router,
   keyPool,
-  provider,
-  executor: new Executor({ router, keyPool, provider, repo }),
+  providers,
+  executor: new Executor({ router, keyPool, providers, repo }),
   jobManager: new JobManager(),
   logger: false,
   webDist: path.resolve(import.meta.dirname, "../../web/dist"),
@@ -85,8 +85,8 @@ const gen = await fetch(`${base}/v1/images/generations`, {
   headers: { "content-type": "application/json", authorization: `Bearer ${loginRes.token}` },
   body: JSON.stringify({ model: "img-1", prompt: "a white cat", n: 1 }),
 });
-const genBody = (await gen.json()) as { created: number; data: { b64_json: string }[]; usage: { total_tokens: number } };
-console.log("[e2e] generations:", gen.status, "channel:", gen.headers.get("x-tiny-channel"), "usage:", genBody.usage.total_tokens, "b64 length:", genBody.data[0].b64_json.length);
+const genBody = (await gen.json()) as { created: number; data: { b64_json: string }[]; usage?: { total_tokens: number } };
+console.log("[e2e] generations:", gen.status, "channel:", gen.headers.get("x-tiny-channel"), "usage:", genBody.usage?.total_tokens ?? "-", "b64 length:", genBody.data?.[0]?.b64_json?.length ?? "-");
 console.assert(gen.status === 200 && genBody.data[0].b64_json === PNG_B64, "generation failed");
 
 // ---- models 列表 ----
@@ -159,6 +159,36 @@ console.log("[e2e] history ok");
 // ---- 日志 ----
 const logs = await (await fetch(`${base}/admin/logs`, { headers: admin })).json();
 console.log("[e2e] logs:", logs.length, "entries, last status:", logs[0]?.status);
+
+// ---- 用户注册 ----
+const regDisabled = await fetch(`${base}/admin/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "self@x.com", password: "self-pass" }) });
+console.log("[e2e] register while disabled:", regDisabled.status);
+console.assert(regDisabled.status === 403, "register should be disabled by default");
+await fetch(`${base}/admin/settings`, {
+  method: "PUT",
+  headers: admin,
+  body: JSON.stringify({ globalPrompt: "", announcement: "", registration: { enabled: true, dailyQuota: 30 } }),
+});
+const regStatus = await (await fetch(`${base}/admin/auth/register`)).json();
+console.assert(regStatus.enabled === true, "register status should be enabled");
+const reg = await fetch(`${base}/admin/auth/register`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email: "self@x.com", password: "self-pass" }),
+});
+const regBody = (await reg.json()) as { token: string; role: string };
+console.log("[e2e] register:", reg.status, "role:", regBody.role);
+console.assert(reg.status === 201 && regBody.role === "user", "register failed");
+const regMe = (await (await fetch(`${base}/admin/auth/me`, { headers: { authorization: `Bearer ${regBody.token}` } })).json()) as { quotaTotal: number | null; quotaRemaining: number | null };
+console.log("[e2e] registered user quota:", regMe.quotaRemaining, "/", regMe.quotaTotal);
+console.assert(regMe.quotaTotal === 30 && regMe.quotaRemaining === 30, "registered user should default to 30/day");
+const regPw = await fetch(`${base}/admin/auth/password`, {
+  method: "PUT",
+  headers: { "content-type": "application/json", authorization: `Bearer ${regBody.token}` },
+  body: JSON.stringify({ oldPassword: "self-pass", newPassword: "self-pass-2" }),
+});
+console.log("[e2e] registered user change password:", regPw.status);
+console.assert(regPw.status === 204, "registered user should be able to change own password");
 
 await app.close();
 await upstream.close();
