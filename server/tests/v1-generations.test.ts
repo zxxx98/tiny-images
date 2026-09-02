@@ -30,9 +30,9 @@ afterEach(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-async function start(): Promise<void> {
+async function start(generationMode: "images" | "chat" = "images"): Promise<void> {
   await upstream.listen({ port: 0, host: "127.0.0.1" });
-  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1` });
+  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`, generationMode });
   repo.createKey(c.id, "sk-upstream");
   repo.createModel({ publicName: "img-1", channelId: c.id, upstreamName: "gpt-image-1" });
   const provider = new OpenAICompatProvider();
@@ -52,6 +52,24 @@ async function start(): Promise<void> {
 }
 
 describe("POST /v1/images/generations", () => {
+  it("uses a chat-only upstream but returns the Images API shape", async () => {
+    let body: Record<string, unknown> = {};
+    upstream.post("/v1/chat/completions", async (req, reply) => {
+      body = req.body as Record<string, unknown>;
+      return reply.send({
+        created: 42,
+        choices: [{ message: { content: "done", images: [{ type: "image_url", image_url: { url: `data:image/png;base64,${PNG_B64}` } }] } }],
+      });
+    });
+    await start("chat");
+
+    const res = await app.inject({ method: "POST", url: "/v1/images/generations", payload: { model: "img-1", prompt: "cat" } });
+
+    expect(body).toMatchObject({ model: "gpt-image-1", messages: [{ role: "user", content: "cat" }], modalities: ["text", "image"] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ created: 42, data: [{ b64_json: PNG_B64 }] });
+  });
+
   it("returns openai shape with b64 and logs ok", async () => {
     upstream.post("/v1/images/generations", async (_req, reply) =>
       reply.send({ created: 42, data: [{ b64_json: PNG_B64, revised_prompt: "rev" }], usage: { total: 1 } }),
@@ -79,7 +97,7 @@ describe("POST /v1/images/generations", () => {
     expect(res.json().data[0].url).toBe("http://example.test/x.png");
   });
 
-  it("converts upstream url to b64 when client wants b64", async () => {
+  it("rejects a private upstream image URL when client wants b64", async () => {
     upstream.get("/x.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
     upstream.post("/v1/images/generations", async (_req, reply) =>
       reply.send({ created: 1, data: [{ url: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/x.png` }] }),
@@ -90,9 +108,8 @@ describe("POST /v1/images/generations", () => {
       url: "/v1/images/generations",
       payload: { model: "img-1", prompt: "cat", response_format: "b64_json" },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data[0].b64_json).toBe(PNG_B64);
-    expect(res.json().data[0].url).toBeUndefined();
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.message).toContain("not publicly routable");
   });
 
   it("converts upstream b64 to file url when client wants url", async () => {
