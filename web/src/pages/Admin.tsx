@@ -52,7 +52,7 @@ export default function Admin() {
 // ---- 渠道 ----
 
 export function newChannelDraft(): Partial<Channel> {
-  return { type: "openai-compat", editMode: "auto", timeoutMs: 120000, concurrency: 2, enabled: true };
+  return { type: "openai-compat", generationMode: "images", editMode: "auto", timeoutMs: 120000, concurrency: 2, enabled: true };
 }
 
 export function changeChannelType(draft: Partial<Channel>, type: Channel["type"]): Partial<Channel> {
@@ -244,6 +244,12 @@ function ChannelsTab() {
             </p>
           ) : (
             <>
+              <label htmlFor="ch-generation-mode">图片生成请求方式</label>
+              <select id="ch-generation-mode" value={editing.generationMode ?? "images"} onChange={(e) => setEditing({ ...editing, generationMode: e.target.value as Channel["generationMode"] })}>
+                <option value="images">Images API（/images/generations）</option>
+                <option value="chat">Chat API（/chat/completions）</option>
+              </select>
+              <p className="muted">Chat 模式会把现有图片生成请求转为 chat 请求，并把返回图片统一为 Images API 格式。</p>
               <label htmlFor="ch-edit-mode">图片编辑请求方式（edits）</label>
               <select id="ch-edit-mode" value={editing.editMode ?? "auto"} onChange={(e) => setEditing({ ...editing, editMode: e.target.value as Channel["editMode"] })}>
                 <option value="auto">auto（自动回退）</option>

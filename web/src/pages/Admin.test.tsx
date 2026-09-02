@@ -7,6 +7,7 @@ describe("channel type form state", () => {
     expect(AdminModule).toHaveProperty("newChannelDraft");
     expect((AdminModule.newChannelDraft as () => Partial<Channel>)()).toMatchObject({
       type: "openai-compat",
+      generationMode: "images",
       editMode: "auto",
       timeoutMs: 120000,
       concurrency: 2,

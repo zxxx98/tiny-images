@@ -5,6 +5,7 @@
 ## 功能
 
 - **OpenAI images 兼容 API**：`POST /v1/images/generations`、`POST /v1/images/edits`（multipart，含 JSON 回退）、`GET /v1/models`
+- **Chat 图片上游兼容**：渠道可将图片生成转换为上游 `POST /v1/chat/completions`，对外仍返回标准 Images API 格式
 - **原生 AI Horde**：支持异步生成轮询、img2img 和 inpainting，并可通过 `horde` 命名空间传递 Horde 专属参数
 - **流式生成**：请求体 `"stream": true` 走 SSE（自定义协议，见下文）
 - **Cloudflare Images 超分**：可选的单图 2×/4× AI 放大后台任务，结果本地化到现有 `/files/*` 生命周期
@@ -116,6 +117,12 @@ curl http://localhost:3000/v1/images/generations \
 
 - 未指定 `response_format` 时按上游原生格式返回；显式指定 `url` / `b64_json` 时网关自动转换。
 - OpenAI 兼容渠道会原样透传 `quality`、`style` 等其余参数（`response_format` 除外，转换由网关本地完成）。
+
+### 仅支持 Chat Completions 的上游
+
+在「管理后台 → 渠道」将 OpenAI Compatible 渠道的「图片生成请求方式」设为 `Chat API`。客户端仍请求 `/v1/images/generations`；网关会将 prompt 转成一条 user message，默认向上游发送 `modalities: ["text", "image"]`，并保留映射后的上游模型名。`n`、`size`、`quality` 和供应商扩展参数会继续传递。
+
+网关会从常见 chat 响应格式中提取图片：`choices[].message.images[]`、内容块中的 `image_url`、兼容的 `delta`，以及 `message.content` 中的 Markdown 图片。`data:image/...;base64,...` 转成 `b64_json`，公开 HTTP(S) URL 转成 `url`，随后继续使用既有的 URL/Base64 转换、历史、额度与日志流程。普通文本中的链接不会被识别为图片；无可识别图片会返回 `502 upstream_error`。
 
 ### AI Horde
 

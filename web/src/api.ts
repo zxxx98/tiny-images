@@ -104,6 +104,7 @@ export interface Channel {
   baseUrl: string;
   timeoutMs: number;
   concurrency: number;
+  generationMode: "images" | "chat";
   editMode: "auto" | "multipart" | "json-base64";
   extraHeaders: Record<string, string>;
   enabled: boolean;
