@@ -15,11 +15,11 @@ export function setRole(role: "admin" | "user" | null): void {
   else localStorage.removeItem(ROLE_KEY);
 }
 
-export async function loginRequest(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+export async function loginRequest(email: string, password: string, turnstileToken?: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
   const res = await fetch("/admin/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(turnstileToken ? { turnstileToken } : {}) }),
   });
   const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
   if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });
@@ -33,12 +33,19 @@ export async function fetchRegistrationEnabled(): Promise<boolean> {
   return !!parsed.enabled;
 }
 
+// Turnstile 人机验证配置（环境变量开启）；登录/注册页据此渲染验证组件
+export async function fetchTurnstileConfig(): Promise<{ enabled: boolean; siteKey: string | null }> {
+  const res = await fetch("/admin/auth/turnstile");
+  const parsed = (await res.json().catch(() => ({}))) as { enabled?: boolean; siteKey?: string | null };
+  return { enabled: !!parsed.enabled, siteKey: parsed.siteKey ?? null };
+}
+
 // 用户自助注册：成功即视为已登录（服务端直接返回 token）
-export async function registerRequest(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+export async function registerRequest(email: string, password: string, turnstileToken?: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
   const res = await fetch("/admin/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(turnstileToken ? { turnstileToken } : {}) }),
   });
   const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
   if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });

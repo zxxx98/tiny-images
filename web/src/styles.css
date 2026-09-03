@@ -861,6 +861,14 @@ textarea:disabled {
   font-weight: 700;
 }
 
+/* ---- Cloudflare Turnstile 人机验证 ---- */
+.turnstile-slot {
+  display: flex;
+  justify-content: center;
+  min-height: 32px;
+  align-items: center;
+}
+
 .register-closed-tip {
   margin: 0;
   text-align: center;

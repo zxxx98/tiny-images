@@ -3,12 +3,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Register from "./Register";
+import Login from "./Login";
 
 const apiMocks = vi.hoisted(() => ({
   fetchRegistrationEnabled: vi.fn(),
   fetchTurnstileConfig: vi.fn(),
-  registerRequest: vi.fn(),
+  loginRequest: vi.fn(),
   clearToken: vi.fn(),
   setToken: vi.fn(),
   setRole: vi.fn(),
@@ -44,10 +44,11 @@ let root: Root;
 beforeEach(() => {
   apiMocks.fetchRegistrationEnabled.mockReset();
   apiMocks.fetchTurnstileConfig.mockReset();
-  apiMocks.registerRequest.mockReset();
+  apiMocks.loginRequest.mockReset();
   apiMocks.clearToken.mockReset();
   apiMocks.setToken.mockReset();
   apiMocks.setRole.mockReset();
+  apiMocks.fetchRegistrationEnabled.mockResolvedValue(false);
   apiMocks.fetchTurnstileConfig.mockResolvedValue({ enabled: false, siteKey: null });
   turnstileFake.issue = "captcha-token";
   container = document.createElement("div");
@@ -64,8 +65,8 @@ afterEach(async () => {
 async function renderPage(): Promise<void> {
   await act(async () => {
     root.render(
-      <MemoryRouter initialEntries={["/register"]}>
-        <Register />
+      <MemoryRouter initialEntries={["/login"]}>
+        <Login />
       </MemoryRouter>,
     );
     await Promise.resolve();
@@ -88,51 +89,26 @@ async function submit(): Promise<void> {
   });
 }
 
-describe("Register", () => {
-  it("shows the closed-state notice when registration is disabled", async () => {
-    apiMocks.fetchRegistrationEnabled.mockResolvedValue(false);
+describe("Login", () => {
+  it("logs in without a turnstile token when the feature is off", async () => {
+    apiMocks.loginRequest.mockResolvedValue({ token: "jwt", role: "admin", email: "a@x.com" });
     await renderPage();
-    expect(container.textContent).toContain("当前未开放注册");
-    expect(container.querySelector("form")).toBeNull();
-    expect(apiMocks.registerRequest).not.toHaveBeenCalled();
+    type("#login-email", "a@x.com");
+    type("#login-password", "pw");
+    await submit();
+    expect(apiMocks.loginRequest).toHaveBeenCalledWith("a@x.com", "pw", undefined);
+    expect(apiMocks.setToken).toHaveBeenCalledWith("jwt");
+    expect(apiMocks.setRole).toHaveBeenCalledWith("admin");
   });
 
-  it("registers, stores the token, and navigates to the playground", async () => {
-    apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
-    apiMocks.registerRequest.mockResolvedValue({ token: "reg-token", role: "user", email: "new@x.com" });
+  it("maps invalid credentials to a friendly message", async () => {
+    apiMocks.loginRequest.mockRejectedValue(new apiMocks.ApiError(401, { error: { message: "invalid email or password" } }));
     await renderPage();
-    expect(container.querySelector("#register-email")).not.toBeNull();
-
-    type("#register-email", "new@x.com");
-    type("#register-password", "secret1");
-    type("#register-confirm", "secret1");
+    type("#login-email", "a@x.com");
+    type("#login-password", "nope");
     await submit();
-
-    expect(apiMocks.registerRequest).toHaveBeenCalledWith("new@x.com", "secret1", undefined);
-    expect(apiMocks.setToken).toHaveBeenCalledWith("reg-token");
-    expect(apiMocks.setRole).toHaveBeenCalledWith("user");
-  });
-
-  it("shows a mismatch error before calling the API", async () => {
-    apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
-    await renderPage();
-    type("#register-email", "new@x.com");
-    type("#register-password", "secret1");
-    type("#register-confirm", "secret2");
-    await submit();
-    expect(container.textContent).toContain("两次输入的密码不一致");
-    expect(apiMocks.registerRequest).not.toHaveBeenCalled();
-  });
-
-  it("maps a duplicate email to a friendly message", async () => {
-    apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
-    apiMocks.registerRequest.mockRejectedValue(new apiMocks.ApiError(409, { error: { message: "user 'new@x.com' already exists" } }));
-    await renderPage();
-    type("#register-email", "new@x.com");
-    type("#register-password", "secret1");
-    type("#register-confirm", "secret1");
-    await submit();
-    expect(container.textContent).toContain("该邮箱已被注册");
+    expect(container.textContent).toContain("邮箱或密码不正确");
+    expect(apiMocks.setToken).not.toHaveBeenCalled();
   });
 
   describe("with turnstile enabled", () => {
@@ -142,36 +118,31 @@ describe("Register", () => {
 
     it("disables submit until the widget issues a token", async () => {
       turnstileFake.issue = null;
-      apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
       await renderPage();
-      type("#register-email", "new@x.com");
-      type("#register-password", "secret1");
-      type("#register-confirm", "secret1");
+      type("#login-email", "a@x.com");
+      type("#login-password", "pw");
       expect((container.querySelector("button[type=submit]") as HTMLButtonElement).disabled).toBe(true);
-      expect(apiMocks.registerRequest).not.toHaveBeenCalled();
+      expect(apiMocks.loginRequest).not.toHaveBeenCalled();
     });
 
-    it("sends the turnstile token with the registration", async () => {
-      apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
-      apiMocks.registerRequest.mockResolvedValue({ token: "reg-token", role: "user", email: "new@x.com" });
+    it("sends the turnstile token with the login", async () => {
+      apiMocks.loginRequest.mockResolvedValue({ token: "jwt", role: "user", email: "a@x.com" });
       await renderPage();
-      type("#register-email", "new@x.com");
-      type("#register-password", "secret1");
-      type("#register-confirm", "secret1");
+      type("#login-email", "a@x.com");
+      type("#login-password", "pw");
       await submit();
-      expect(apiMocks.registerRequest).toHaveBeenCalledWith("new@x.com", "secret1", "captcha-token");
-      expect(apiMocks.setToken).toHaveBeenCalledWith("reg-token");
+      expect(apiMocks.loginRequest).toHaveBeenCalledWith("a@x.com", "pw", "captcha-token");
+      expect(apiMocks.setToken).toHaveBeenCalledWith("jwt");
     });
 
     it("maps a captcha rejection to a friendly message", async () => {
-      apiMocks.fetchRegistrationEnabled.mockResolvedValue(true);
-      apiMocks.registerRequest.mockRejectedValue(new apiMocks.ApiError(403, { error: { message: "human verification failed" } }));
+      apiMocks.loginRequest.mockRejectedValue(new apiMocks.ApiError(403, { error: { message: "human verification failed" } }));
       await renderPage();
-      type("#register-email", "new@x.com");
-      type("#register-password", "secret1");
-      type("#register-confirm", "secret1");
+      type("#login-email", "a@x.com");
+      type("#login-password", "pw");
       await submit();
       expect(container.textContent).toContain("人机验证未通过，请重新完成验证");
+      expect(apiMocks.setToken).not.toHaveBeenCalled();
     });
   });
 });

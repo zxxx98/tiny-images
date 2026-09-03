@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditJob, createUpscaleJob, fetchAnnouncement, fetchChannelHealth, fetchFeatures, fetchModelHealth, fetchSettings, optimizePrompt, saveSettings } from "./api";
+import { createEditJob, createUpscaleJob, fetchAnnouncement, fetchChannelHealth, fetchFeatures, fetchModelHealth, fetchSettings, fetchTurnstileConfig, loginRequest, optimizePrompt, saveSettings } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -250,5 +250,45 @@ describe("application settings API", () => {
       "/v1/announcement",
       expect.objectContaining({ method: "GET", headers: expect.objectContaining({ authorization: "Bearer web-token" }) }),
     );
+  });
+});
+
+describe("turnstile auth API", () => {
+  it("loginRequest omits turnstileToken when absent", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: "jwt", role: "user", email: "u@x.com" }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loginRequest("u@x.com", "pw")).resolves.toEqual({ token: "jwt", role: "user", email: "u@x.com" });
+    expect(fetchMock).toHaveBeenCalledWith("/admin/auth/login", expect.objectContaining({ body: JSON.stringify({ email: "u@x.com", password: "pw" }) }));
+  });
+
+  it("loginRequest includes turnstileToken when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: "jwt", role: "user", email: "u@x.com" }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loginRequest("u@x.com", "pw", "captcha-token")).resolves.toMatchObject({ token: "jwt" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/admin/auth/login",
+      expect.objectContaining({ body: JSON.stringify({ email: "u@x.com", password: "pw", turnstileToken: "captcha-token" }) }),
+    );
+  });
+
+  it("fetchTurnstileConfig returns the enabled flag and site key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ enabled: true, siteKey: "site-key" }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchTurnstileConfig()).resolves.toEqual({ enabled: true, siteKey: "site-key" });
+    expect(fetchMock).toHaveBeenCalledWith("/admin/auth/turnstile");
+  });
+
+  it("fetchTurnstileConfig tolerates a failed probe", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 500 })));
+    await expect(fetchTurnstileConfig()).resolves.toEqual({ enabled: false, siteKey: null });
   });
 });

@@ -13,6 +13,13 @@ export interface CloudflareImagesEnv {
   concurrency: number;
 }
 
+export interface TurnstileEnv {
+  enabled: boolean;
+  siteKey: string | null;
+  secretKey: string | null;
+  timeoutMs: number;
+}
+
 export interface Env {
   port: number;
   dataDir: string;
@@ -21,6 +28,7 @@ export interface Env {
   adminEmail?: string | null;
   adminPassword?: string | null;
   cloudflareImages?: CloudflareImagesEnv;
+  turnstile?: TurnstileEnv;
 }
 
 function parseInteger(
@@ -86,6 +94,11 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
   if (cloudflareEnabled && !cloudflareBaseUrl) {
     throw new Error("CLOUDFLARE_IMAGES_BASE_URL is required when CLOUDFLARE_IMAGES_ENABLED=true");
   }
+  const turnstileSiteKey = processEnv.TURNSTILE_SITE_KEY || null;
+  const turnstileSecretKey = processEnv.TURNSTILE_SECRET_KEY || null;
+  if (!!turnstileSiteKey !== !!turnstileSecretKey) {
+    throw new Error("TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY must be configured together");
+  }
   return {
     port: Number.isFinite(port) ? port : 3000,
     dataDir: processEnv.DATA_DIR ?? path.resolve("data"),
@@ -102,6 +115,12 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
       maxDimension: parseInteger(processEnv, "UPSCALE_MAX_DIMENSION", 8192, 1, 16_384),
       maxOutputBytes: parseInteger(processEnv, "UPSCALE_MAX_OUTPUT_BYTES", 50 * 1024 * 1024, 1, 100 * 1024 * 1024),
       concurrency: parseInteger(processEnv, "UPSCALE_CONCURRENCY", 2, 1, 16),
+    },
+    turnstile: {
+      enabled: !!turnstileSiteKey && !!turnstileSecretKey,
+      siteKey: turnstileSiteKey,
+      secretKey: turnstileSecretKey,
+      timeoutMs: parseInteger(processEnv, "TURNSTILE_TIMEOUT_MS", 10_000, 1_000, 60_000),
     },
   };
 }
