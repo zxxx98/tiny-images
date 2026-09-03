@@ -36,6 +36,25 @@ export function registerFiles(ctx: AppContext): void {
     return reply.send(fs.createReadStream(full));
   });
 
+  // 广场分享图：分享时复制到 dataDir/plaza，不参与过期清理，永久可访问
+  ctx.app.get("/files/plaza/:name", async (req, reply) => {
+    const { name } = req.params as { name: string };
+    const match = NAME_RE.exec(name);
+    if (!match) {
+      notFound(reply, "invalid file name");
+      return;
+    }
+    const full = path.join(ctx.deps.env.dataDir, "plaza", `${match[1]}.${match[2]}`);
+    if (!fs.existsSync(full)) {
+      notFound(reply, "file not found or expired");
+      return;
+    }
+    reply.header("content-type", CONTENT_TYPES[match[2]] ?? "application/octet-stream");
+    reply.header("cache-control", "private, max-age=86400");
+    reply.header("x-content-type-options", "nosniff");
+    return reply.send(fs.createReadStream(full));
+  });
+
   // Cloudflare Image Resizing 的专用回源路由。只接受随机暂存名，不回落到 generated。
   ctx.app.get("/upscale-inputs/:name", async (req, reply) => {
     const { name } = req.params as { name: string };

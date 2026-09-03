@@ -380,6 +380,7 @@ export interface JobStatus {
   latencyMs: number | null;
   error: string | null;
   createdAt: number;
+  generationId?: number;
   images: JobImage[];
 }
 
@@ -416,6 +417,42 @@ export function fetchJob(id: string): Promise<JobStatus> {
 
 // 删除一条生成历史（服务端会连带删除其图片文件）
 export const deleteHistoryItem = (id: number): Promise<void> => api<void>(`/v1/history/${id}`, { method: "DELETE" });
+
+// ---- 广场分享 ----
+
+export interface PlazaItem {
+  id: number;
+  createdAt: number;
+  userId: number;
+  author: string | null;
+  model: string | null;
+  prompt: string;
+  revisedPrompt?: string;
+  width: number | null;
+  height: number | null;
+  url: string;
+  mine: boolean;
+  canDelete: boolean;
+}
+
+export interface PlazaResponse {
+  items: PlazaItem[];
+}
+
+// 分享一条生成记录中的某张图到广场；同一张图重复分享幂等返回已有记录
+export const shareToPlaza = (generationId: number, imageIndex = 0): Promise<PlazaItem> =>
+  api<PlazaItem>("/v1/plaza", { method: "POST", body: { generationId, imageIndex } });
+
+export const fetchPlaza = (opts: { before?: number; mine?: boolean } = {}): Promise<PlazaResponse> => {
+  const q = new URLSearchParams();
+  if (opts.before) q.set("before", String(opts.before));
+  if (opts.mine) q.set("mine", "1");
+  const qs = q.toString();
+  return api<PlazaResponse>(`/v1/plaza${qs ? `?${qs}` : ""}`);
+};
+
+// 取消分享（仅本人或管理员；服务端会连带删除广场图片文件）
+export const deletePlazaShare = (id: number): Promise<void> => api<void>(`/v1/plaza/${id}`, { method: "DELETE" });
 
 // ---- 下载水印 ----
 

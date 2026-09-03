@@ -3,6 +3,7 @@ import { registerGenerations } from "./generations.js";
 import { registerEdits } from "./edits.js";
 import { registerVariations } from "./variations.js";
 import { registerHistory } from "./history.js";
+import { registerPlaza } from "./plaza.js";
 import { buildModelHealth } from "./modelHealth.js";
 import { registerUpscale } from "./upscale.js";
 import { modelAllowedByPolicy } from "../core/router.js";
@@ -34,6 +35,7 @@ export function registerV1(ctx: AppContext): void {
   registerEdits(ctx);
   registerVariations(ctx);
   registerHistory(ctx);
+  registerPlaza(ctx);
   registerUpscale(ctx);
   // 流式（Task 12）在后续接入
 }

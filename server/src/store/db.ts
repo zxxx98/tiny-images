@@ -142,6 +142,22 @@ const MIGRATIONS: string[] = [
   -- 用户下载水印配置：JSON { enabled, text }，NULL 视为未启用
   ALTER TABLE users ADD COLUMN watermark TEXT;
   `,
+  `
+  CREATE TABLE IF NOT EXISTS plaza_shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    generation_id INTEGER,
+    file TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    model TEXT,
+    prompt TEXT NOT NULL DEFAULT '',
+    revised_prompt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS plaza_shares_cursor ON plaza_shares(id DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS plaza_shares_user_file ON plaza_shares(user_id, file);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {
