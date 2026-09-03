@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import { fetchSettings, saveSettings, type PromptOptimizerSettings, type RegistrationSettings } from "../../api";
+import {
+  DEFAULT_WATERMARK_STYLE,
+  fetchSettings,
+  saveSettings,
+  type PromptOptimizerSettings,
+  type RegistrationSettings,
+  type WatermarkStyle,
+} from "../../api";
 
 const EMPTY_OPTIMIZER: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
 const DEFAULT_REGISTRATION: RegistrationSettings = { enabled: false, dailyQuota: 30 };
@@ -12,6 +19,7 @@ export default function SettingsTab() {
   const [registration, setRegistration] = useState<RegistrationSettings>(DEFAULT_REGISTRATION);
   const [quotaText, setQuotaText] = useState(String(DEFAULT_REGISTRATION.dailyQuota));
   const [reverse, setReverse] = useState<PromptOptimizerSettings>(EMPTY_REVERSE);
+  const [watermarkStyle, setWatermarkStyle] = useState<WatermarkStyle>(DEFAULT_WATERMARK_STYLE);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -31,6 +39,7 @@ export default function SettingsTab() {
         setRegistration(reg);
         setQuotaText(String(reg.dailyQuota));
         setReverse(settings.promptReverse ?? EMPTY_REVERSE);
+        setWatermarkStyle(settings.watermarkStyle ?? DEFAULT_WATERMARK_STYLE);
         setLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -51,16 +60,25 @@ export default function SettingsTab() {
       setError("注册用户每日额度必须是正整数");
       return;
     }
+    if (!Number.isInteger(watermarkStyle.fontSize) || watermarkStyle.fontSize < 12 || watermarkStyle.fontSize > 128) {
+      setError("水印字号必须是 12–128 的整数");
+      return;
+    }
+    if (Number.isNaN(watermarkStyle.opacity) || watermarkStyle.opacity < 0.1 || watermarkStyle.opacity > 1) {
+      setError("水印不透明度必须在 0.1–1 之间");
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);
     try {
       const next: RegistrationSettings = { ...registration, dailyQuota };
-      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer, promptReverse: reverse, registration: next });
+      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer, promptReverse: reverse, registration: next, watermarkStyle });
       setGlobalPrompt(settings.globalPrompt);
       setAnnouncement(settings.announcement);
       setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
       setReverse(settings.promptReverse ?? EMPTY_REVERSE);
+      setWatermarkStyle(settings.watermarkStyle ?? watermarkStyle);
       const reg = settings.registration ?? next;
       setRegistration(reg);
       setQuotaText(String(reg.dailyQuota));
@@ -194,6 +212,67 @@ export default function SettingsTab() {
           spellCheck={false}
         />
         <p className="muted">启用后登录页出现「注册」入口，访客可用邮箱和密码自助注册，新账号默认每天可生成该数量的图片；关闭只影响新注册，已有账号不受影响。</p>
+
+        <h3>下载水印样式</h3>
+        <label htmlFor="settings-wm-position">水印位置</label>
+        <select
+          id="settings-wm-position"
+          value={watermarkStyle.position}
+          disabled={!loaded || saving}
+          onChange={(event) => setWatermarkStyle((cur) => ({ ...cur, position: event.target.value as WatermarkStyle["position"] }))}
+        >
+          <option value="tl">左上</option>
+          <option value="tc">中上</option>
+          <option value="tr">右上</option>
+          <option value="bl">左下</option>
+          <option value="bc">中下</option>
+          <option value="br">右下</option>
+        </select>
+        <label htmlFor="settings-wm-font-size">字号（12–128）</label>
+        <input
+          id="settings-wm-font-size"
+          type="number"
+          min={12}
+          max={128}
+          step={1}
+          value={watermarkStyle.fontSize}
+          disabled={!loaded || saving}
+          onChange={(event) => setWatermarkStyle((cur) => ({ ...cur, fontSize: Number(event.target.value) }))}
+          spellCheck={false}
+        />
+        <label htmlFor="settings-wm-opacity">不透明度（0.1–1）</label>
+        <input
+          id="settings-wm-opacity"
+          type="number"
+          min={0.1}
+          max={1}
+          step={0.05}
+          value={watermarkStyle.opacity}
+          disabled={!loaded || saving}
+          onChange={(event) => setWatermarkStyle((cur) => ({ ...cur, opacity: Number(event.target.value) }))}
+          spellCheck={false}
+        />
+        <label htmlFor="settings-wm-color">文字颜色</label>
+        <input
+          id="settings-wm-color"
+          type="color"
+          value={watermarkStyle.color}
+          disabled={!loaded || saving}
+          onChange={(event) => setWatermarkStyle((cur) => ({ ...cur, color: event.target.value }))}
+        />
+        <label htmlFor="settings-wm-prefix">固定前缀（如站名，可空）</label>
+        <input
+          id="settings-wm-prefix"
+          type="text"
+          maxLength={40}
+          value={watermarkStyle.prefix}
+          disabled={!loaded || saving}
+          onChange={(event) => setWatermarkStyle((cur) => ({ ...cur, prefix: event.target.value }))}
+          spellCheck={false}
+        />
+        <p className="muted">
+          用户在顶栏「水印」弹窗开启后，下载的副本会以该样式附加「前缀 · 署名」文字；原图与 API 返回始终无水印。Docker 部署需包含 CJK 字体（默认 Dockerfile 已安装）。
+        </p>
 
         <button className="btn primary" type="submit" disabled={!loaded || saving}>
           {saving ? "保存中…" : "保存设置"}

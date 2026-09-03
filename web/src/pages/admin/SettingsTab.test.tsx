@@ -4,9 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsTab from "./SettingsTab";
 
+const WM_DEFAULT = { position: "br", fontSize: 20, opacity: 0.6, color: "#ffffff", prefix: "" };
+
 const apiMocks = vi.hoisted(() => ({
   fetchSettings: vi.fn(),
   saveSettings: vi.fn(),
+  DEFAULT_WATERMARK_STYLE: { position: "br", fontSize: 20, opacity: 0.6, color: "#ffffff", prefix: "" },
 }));
 
 vi.mock("../../api", () => apiMocks);
@@ -86,6 +89,7 @@ describe("SettingsTab", () => {
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-1", model: "gpt-4o-mini" },
       promptReverse: REVERSE_EMPTY,
       registration: { enabled: false, dailyQuota: 30 },
+      watermarkStyle: WM_DEFAULT,
     });
     expect(container.textContent).toContain("设置已保存");
   });
@@ -122,6 +126,7 @@ describe("SettingsTab", () => {
       promptOptimizer: { baseUrl: "https://api.test/v1", apiKey: "sk-2", model: "gpt-4o-mini" },
       promptReverse: REVERSE_EMPTY,
       registration: REGISTRATION_DEFAULT,
+      watermarkStyle: WM_DEFAULT,
     });
   });
 
@@ -157,6 +162,7 @@ describe("SettingsTab", () => {
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
       promptReverse: { baseUrl: "https://vl.test/v1", apiKey: "sk-3", model: "qwen-vl" },
       registration: REGISTRATION_DEFAULT,
+      watermarkStyle: WM_DEFAULT,
     });
     expect(container.textContent).toContain("设置已保存");
   });
@@ -198,6 +204,7 @@ describe("SettingsTab", () => {
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
       promptReverse: REVERSE_EMPTY,
       registration: { enabled: true, dailyQuota: 45 },
+      watermarkStyle: WM_DEFAULT,
     });
     expect(container.textContent).toContain("设置已保存");
   });
@@ -244,5 +251,42 @@ describe("SettingsTab", () => {
     expect(apiMocks.fetchSettings).toHaveBeenCalledTimes(2);
     expect(container.querySelector<HTMLTextAreaElement>("#settings-global-prompt")!.value).toBe("existing");
     expect(saveButton.disabled).toBe(false);
+  });
+
+  it("loads and saves the central watermark style", async () => {
+    apiMocks.fetchSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      promptReverse: REVERSE_EMPTY,
+      registration: REGISTRATION_DEFAULT,
+      watermarkStyle: { position: "tl", fontSize: 24, opacity: 0.5, color: "#ffcc00", prefix: "站名" },
+    });
+    apiMocks.saveSettings.mockResolvedValue({
+      globalPrompt: "",
+      announcement: "",
+      announcementVersion: 0,
+      promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      promptReverse: REVERSE_EMPTY,
+      registration: REGISTRATION_DEFAULT,
+      watermarkStyle: { position: "tl", fontSize: 24, opacity: 0.5, color: "#ffcc00", prefix: "站名" },
+    });
+    await renderTab();
+
+    expect(container.querySelector<HTMLSelectElement>("#settings-wm-position")!.value).toBe("tl");
+    expect(container.querySelector<HTMLInputElement>("#settings-wm-prefix")!.value).toBe("站名");
+
+    await act(async () => {
+      typeInput("#settings-wm-font-size", "32");
+    });
+    await submit();
+
+    expect(apiMocks.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        watermarkStyle: { position: "tl", fontSize: 32, opacity: 0.5, color: "#ffcc00", prefix: "站名" },
+      }),
+    );
+    expect(container.textContent).toContain("设置已保存");
   });
 });

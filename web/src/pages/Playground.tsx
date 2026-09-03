@@ -7,6 +7,7 @@ import {
   createJob,
   createUpscaleJob,
   deleteFavorite,
+  downloadImage,
   fetchAnnouncement,
   fetchFavorites,
   fetchFeatures,
@@ -1221,9 +1222,17 @@ export default function Playground() {
                       />
                     </span>
                     <div className="shot-actions">
-                      <a className="btn small" href={src} download={`tiny-images-${Date.now()}-${i + 1}.png`}>
+                      <button
+                        className="btn small"
+                        type="button"
+                        onClick={() =>
+                          void downloadImage(src, `tiny-images-${Date.now()}-${i + 1}.png`).catch((err) =>
+                            window.alert(`下载失败：${err instanceof Error ? err.message : String(err)}`),
+                          )
+                        }
+                      >
                         下载
-                      </a>
+                      </button>
                       <button className="btn small" type="button" disabled={!hasEditableModel} onClick={() => void loadIntoEdit(src)}>
                         编辑
                       </button>
