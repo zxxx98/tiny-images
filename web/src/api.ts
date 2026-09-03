@@ -418,7 +418,6 @@ export function fetchJob(id: string): Promise<JobStatus> {
 // 删除一条生成历史（服务端会连带删除其图片文件）
 export const deleteHistoryItem = (id: number): Promise<void> => api<void>(`/v1/history/${id}`, { method: "DELETE" });
 
-<<<<<<< HEAD
 // ---- 广场分享 ----
 
 export interface PlazaItem {
@@ -490,4 +489,3 @@ export async function downloadImage(url: string, filename: string): Promise<void
   anchor.click();
   URL.revokeObjectURL(objectUrl);
 }
->>>>>>> main
