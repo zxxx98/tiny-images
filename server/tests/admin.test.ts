@@ -9,7 +9,7 @@ import { KeyPool } from "../src/core/keyPool.js";
 import { ModelRouter } from "../src/core/router.js";
 import { OpenAICompatProvider } from "../src/providers/openai-compat.js";
 import { openDb } from "../src/store/db.js";
-import { Repo } from "../src/store/repo.js";
+import { DEFAULT_WATERMARK_STYLE, Repo } from "../src/store/repo.js";
 import { hashPassword } from "../src/core/password.js";
 import type { ImageProvider } from "../src/core/types.js";
 
@@ -251,7 +251,7 @@ describe("/admin/logs", () => {
 describe("settings", () => {
   it("reads defaults and updates settings as admin", async () => {
     const initial = await app.inject({ url: "/admin/settings", headers: H });
-    expect(initial.json()).toEqual({ globalPrompt: "", announcement: "", announcementVersion: 0, promptOptimizer: { baseUrl: "", apiKey: "", model: "" }, promptReverse: { baseUrl: "", apiKey: "", model: "" }, registration: { enabled: false, dailyQuota: 30 } });
+    expect(initial.json()).toEqual({ globalPrompt: "", announcement: "", announcementVersion: 0, promptOptimizer: { baseUrl: "", apiKey: "", model: "" }, promptReverse: { baseUrl: "", apiKey: "", model: "" }, registration: { enabled: false, dailyQuota: 30 }, watermarkStyle: DEFAULT_WATERMARK_STYLE });
 
     const updated = await app.inject({
       method: "PUT",
@@ -260,7 +260,7 @@ describe("settings", () => {
       payload: { globalPrompt: "house style", announcement: "Maintenance tonight" },
     });
     expect(updated.statusCode).toBe(200);
-    expect(updated.json()).toEqual({ globalPrompt: "house style", announcement: "Maintenance tonight", announcementVersion: 1, promptOptimizer: { baseUrl: "", apiKey: "", model: "" }, promptReverse: { baseUrl: "", apiKey: "", model: "" }, registration: { enabled: false, dailyQuota: 30 } });
+    expect(updated.json()).toEqual({ globalPrompt: "house style", announcement: "Maintenance tonight", announcementVersion: 1, promptOptimizer: { baseUrl: "", apiKey: "", model: "" }, promptReverse: { baseUrl: "", apiKey: "", model: "" }, registration: { enabled: false, dailyQuota: 30 }, watermarkStyle: DEFAULT_WATERMARK_STYLE });
 
     const repeated = await app.inject({
       method: "PUT",

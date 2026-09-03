@@ -139,6 +139,10 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS prompt_favorites_user ON prompt_favorites(user_id, id DESC);
   `,
   `
+  -- 用户下载水印配置：JSON { enabled, text }，NULL 视为未启用
+  ALTER TABLE users ADD COLUMN watermark TEXT;
+  `,
+  `
   CREATE TABLE IF NOT EXISTS plaza_shares (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,

@@ -6,3 +6,5 @@ web/dist/
 web/.impeccable/
 .worktrees/
 web/src/version.ts
+.zcode/
+*.tsbuildinfo

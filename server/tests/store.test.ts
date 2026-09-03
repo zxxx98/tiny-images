@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "../src/store/db.js";
-import { ConflictError, Repo } from "../src/store/repo.js";
+import { ConflictError, DEFAULT_WATERMARK_STYLE, Repo } from "../src/store/repo.js";
 
 let dir: string;
 let repo: Repo;
@@ -114,6 +114,7 @@ describe("application settings", () => {
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
       promptReverse: { baseUrl: "", apiKey: "", model: "" },
       registration: { enabled: false, dailyQuota: 30 },
+      watermarkStyle: DEFAULT_WATERMARK_STYLE,
     });
   });
 
@@ -125,6 +126,7 @@ describe("application settings", () => {
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
       promptReverse: { baseUrl: "", apiKey: "", model: "" },
       registration: { enabled: false, dailyQuota: 30 },
+      watermarkStyle: DEFAULT_WATERMARK_STYLE,
     });
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "hello" }).announcementVersion).toBe(1);
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "changed" }).announcementVersion).toBe(2);
@@ -141,6 +143,7 @@ describe("application settings", () => {
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
       promptReverse: { baseUrl: "", apiKey: "", model: "" },
       registration: { enabled: false, dailyQuota: 30 },
+      watermarkStyle: DEFAULT_WATERMARK_STYLE,
     });
   });
 });

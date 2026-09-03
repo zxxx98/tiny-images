@@ -3,7 +3,8 @@ import path from "node:path";
 import type { FastifyReply } from "fastify";
 import type { AppContext } from "../app.js";
 
-const NAME_RE = /^([0-9a-f]{32})\.(png|jpe?g|webp)$/;
+// 生成图文件名：<32位hex>.<扩展名>，/files 与 /v1/download 共用同一校验规则
+export const NAME_RE = /^([0-9a-f]{32})\.(png|jpe?g|webp)$/;
 const STAGED_NAME_RE = /^([0-9a-f]{32})\.(png|jpg|webp)$/;
 const CONTENT_TYPES: Record<string, string> = {
   png: "image/png",

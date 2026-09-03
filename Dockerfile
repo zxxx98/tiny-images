@@ -13,6 +13,8 @@ RUN npm run build -w server
 # ---- 运行：仅生产依赖 + 构建产物 ----
 FROM node:22-alpine AS runtime
 WORKDIR /app
+# 下载水印的中文署名依赖 CJK 字体，缺省 alpine 会渲染为方框
+RUN apk add --no-cache fontconfig font-noto-cjk
 ENV NODE_ENV=production \
     DATA_DIR=/data \
     PORT=3000

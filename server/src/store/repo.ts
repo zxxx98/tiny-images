@@ -111,6 +111,7 @@ export interface UserRow {
   quotaUsed: number;
   quotaDay: string | null;
   allowNsfw: boolean;
+  watermark: UserWatermark | null;
   groupIds: number[];
 }
 
@@ -156,6 +157,33 @@ export const DEFAULT_REGISTRATION_DAILY_QUOTA = 30;
 // 图片反推上游与提示词优化同构，只是支持可选的独立配置
 export type PromptReverseSettings = PromptOptimizerSettings;
 
+// 下载水印样式（管理员集中配置）：position 为边角位置，opacity 0.1–1，prefix 为站名等固定前缀
+export type WatermarkPosition = "tl" | "tc" | "tr" | "bl" | "bc" | "br";
+
+export const WATERMARK_POSITIONS: WatermarkPosition[] = ["tl", "tc", "tr", "bl", "bc", "br"];
+
+export interface WatermarkStyle {
+  position: WatermarkPosition;
+  fontSize: number;
+  opacity: number;
+  color: string;
+  prefix: string;
+}
+
+export const DEFAULT_WATERMARK_STYLE: WatermarkStyle = {
+  position: "br",
+  fontSize: 20,
+  opacity: 0.6,
+  color: "#ffffff",
+  prefix: "",
+};
+
+// 用户自身水印配置：enabled 控制下载时是否打水印，text 为署名文字
+export interface UserWatermark {
+  enabled: boolean;
+  text: string;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
@@ -163,6 +191,7 @@ export interface AppSettings {
   promptOptimizer: PromptOptimizerSettings;
   promptReverse: PromptReverseSettings;
   registration: RegistrationSettings;
+  watermarkStyle: WatermarkStyle;
 }
 
 export class ConflictError extends Error {
@@ -199,6 +228,39 @@ function isUniqueViolation(err: unknown): boolean {
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+function parseWatermarkStyle(raw: string | undefined): WatermarkStyle {
+  const fallback = { ...DEFAULT_WATERMARK_STYLE };
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as Partial<WatermarkStyle> | null;
+    if (!parsed || typeof parsed !== "object") return fallback;
+    return {
+      position: WATERMARK_POSITIONS.includes(parsed.position as WatermarkPosition)
+        ? (parsed.position as WatermarkPosition)
+        : fallback.position,
+      fontSize: Number.isInteger(parsed.fontSize) && (parsed.fontSize as number) >= 12 && (parsed.fontSize as number) <= 128
+        ? (parsed.fontSize as number)
+        : fallback.fontSize,
+      opacity: typeof parsed.opacity === "number" && parsed.opacity >= 0.1 && parsed.opacity <= 1 ? parsed.opacity : fallback.opacity,
+      color: typeof parsed.color === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.color) ? parsed.color : fallback.color,
+      prefix: typeof parsed.prefix === "string" ? parsed.prefix.slice(0, 40) : fallback.prefix,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function parseUserWatermark(raw: unknown): UserWatermark | null {
+  if (typeof raw !== "string" || raw === "") return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserWatermark> | null;
+    if (!parsed || typeof parsed.enabled !== "boolean" || typeof parsed.text !== "string") return null;
+    return { enabled: parsed.enabled, text: parsed.text };
+  } catch {
+    return null;
+  }
 }
 
 export class Repo {
@@ -238,6 +300,7 @@ export class Repo {
         enabled: values.get("registration_enabled") === "1",
         dailyQuota: parsePositiveInt(values.get("registration_daily_quota"), DEFAULT_REGISTRATION_DAILY_QUOTA),
       },
+      watermarkStyle: parseWatermarkStyle(values.get("watermark_style")),
     };
   }
 
@@ -247,6 +310,7 @@ export class Repo {
     promptOptimizer?: PromptOptimizerSettings;
     promptReverse?: PromptReverseSettings;
     registration?: RegistrationSettings;
+    watermarkStyle?: WatermarkStyle;
   }): AppSettings {
     const current = this.getAppSettings();
     const announcementVersion =
@@ -254,6 +318,7 @@ export class Repo {
     const optimizer = input.promptOptimizer ?? current.promptOptimizer;
     const reverse = input.promptReverse ?? current.promptReverse;
     const registration = input.registration ?? current.registration;
+    const watermarkStyle = input.watermarkStyle ?? current.watermarkStyle;
     const put = this.db.prepare(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
@@ -270,6 +335,7 @@ export class Repo {
       put.run("prompt_reverse_model", reverse.model);
       put.run("registration_enabled", registration.enabled ? "1" : "0");
       put.run("registration_daily_quota", String(registration.dailyQuota));
+      put.run("watermark_style", JSON.stringify(watermarkStyle));
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -947,6 +1013,7 @@ export class Repo {
       quotaUsed: Number(row.quota_used),
       quotaDay: row.quota_day === null || row.quota_day === undefined ? null : String(row.quota_day),
       allowNsfw: Number(row.allow_nsfw) === 1,
+      watermark: parseUserWatermark(row.watermark),
       groupIds: groupIds.map((g) => Number(g.group_id)),
     };
   }
@@ -996,6 +1063,14 @@ export class Repo {
     // api_keys.user_id 为 ON DELETE SET NULL，无需手动处理
     const res = this.db.prepare("DELETE FROM users WHERE id = ?").run(id);
     return Number(res.changes) > 0;
+  }
+
+  getWatermark(userId: number): UserWatermark {
+    return this.getUser(userId)?.watermark ?? { enabled: false, text: "" };
+  }
+
+  setWatermark(userId: number, watermark: UserWatermark): void {
+    this.db.prepare("UPDATE users SET watermark = ? WHERE id = ?").run(JSON.stringify(watermark), userId);
   }
 
   setUserGroups(userId: number, groupIds: number[]): void {

@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, deleteHistoryItem, shareToPlaza } from "../api";
+import { api, deleteHistoryItem, downloadImage, shareToPlaza } from "../api";
 import Lightbox from "./Lightbox";
 
 interface HistoryImage {
@@ -314,9 +314,16 @@ export default function History() {
                       >
                         {sharedKeys[`${detail.id}:${i}`] ? "已分享 ✓" : sharingKey === `${detail.id}:${i}` ? "分享中…" : "分享到广场"}
                       </button>
-                      <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
+                      <button
+                        className="btn small"
+                        onClick={() =>
+                          void downloadImage(img.url, `tiny-images-${detail.id}-${i + 1}.png`).catch((err) =>
+                            window.alert(`下载失败：${err instanceof Error ? err.message : String(err)}`),
+                          )
+                        }
+                      >
                         下载
-                      </a>
+                      </button>
                     </div>
                   </figure>
                 ))}
