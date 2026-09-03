@@ -1745,6 +1745,11 @@ details textarea {
 .detail-gallery .shot img {
   cursor: zoom-in;
 }
+/* 详情弹窗图片按列宽缩放：大图不约束会溢出弹窗、压住右侧操作按钮 */
+.detail-gallery .shot img {
+  max-width: 100%;
+  height: auto;
+}
 .shot-actions {
   display: flex;
   gap: 6px;

@@ -339,7 +339,7 @@ export default function History() {
                       </button>
                     </>
                   )}
-                  <span className="tip" data-tip="删除记录及其图片文件">
+                  <span className="tip tip-end" data-tip="删除记录及其图片文件">
                     <button className="btn small danger" disabled={deleting} onClick={() => void removeRecord(detail)}>
                       {deleting ? "删除中…" : "删除记录"}
                     </button>
