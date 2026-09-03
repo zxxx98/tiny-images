@@ -288,7 +288,7 @@ export default function SettingsTab() {
               spellCheck={false}
             />
             <p className="muted">
-              用户在顶栏「水印」弹窗开启后，下载的副本会以该样式附加「前缀 · 署名」文字；原图与 API 返回始终无水印。Docker 部署需包含 CJK 字体（默认 Dockerfile 已安装）。
+              此处样式是用户水印的默认值：用户可在「个人设置」页自定义位置、字号、不透明度与颜色，「固定前缀」始终以管理员配置为准。原图与 API 返回始终无水印。Docker 部署需包含 CJK 字体（默认 Dockerfile 已安装）。
             </p>
           </div>
         </fieldset>

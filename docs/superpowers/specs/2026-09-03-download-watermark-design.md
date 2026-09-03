@@ -14,7 +14,7 @@ tiny-images 的生成结果以原图形式存储在 `DATA_DIR/generated` 并经 
 ## 目标
 
 - 管理员在设置页集中配置**水印样式**：位置（左上/中上/右上/左下/中下/右下）、字号、不透明度、文字颜色、固定前缀（如站名）。
-- 每个登录用户配置**自己的水印**：启用开关 + 署名文字。
+- 每个登录用户配置**自己的水印**：启用开关 + 署名文字，并可自定义位置、字号、不透明度、颜色；管理员的集中样式作为未自定义字段的默认值，「固定前缀」始终以管理员配置为准。
 - Playground 与历史的「下载」按钮走新的鉴权下载端点；用户启用水印时，返回的副本按「集中样式 + 用户署名文字」合成水印；未启用时原样返回。
 - 原图文件、`/files/*`、API 返回结果完全不变。
 
@@ -43,7 +43,7 @@ tiny-images 的生成结果以原图形式存储在 `DATA_DIR/generated` 并经 
 
 ### 数据模型
 
-- 迁移：`ALTER TABLE users ADD COLUMN watermark TEXT;`（JSON `{ enabled: boolean; text: string }`，NULL = 未配置，视为关闭）
+- 迁移：`ALTER TABLE users ADD COLUMN watermark TEXT;`（JSON `{ enabled: boolean; text: string; style: { position, fontSize, opacity, color } | null }`，NULL = 未配置，视为关闭；style 为 null 或缺失时完全跟随管理员默认样式）
 - settings 新键 `watermark_style`（JSON）：`{ position, fontSize, opacity, color, prefix }`，缺省值 `br / 20 / 0.6 / "#ffffff" / ""`。
 - 最终水印文字 = `prefix` 与 `text` 以 `·` 连接（各自可空；两者皆空则不合成）。
 
@@ -57,8 +57,8 @@ tiny-images 的生成结果以原图形式存储在 `DATA_DIR/generated` 并经 
 | 端点 | 鉴权 | 说明 |
 | --- | --- | --- |
 | `GET /v1/download/:name` | `requireUser` | 鉴权下载；按用户水印配置决定是否合成 |
-| `GET /v1/watermark` | `requireUser` | 返回 `{ enabled, text }` |
-| `PUT /v1/watermark` | `requireUser` | 保存用户水印配置（text ≤ 60 字） |
+| `GET /v1/watermark` | `requireUser` | 返回 `{ enabled, text, style, styleDefaults }`（styleDefaults 为管理员集中样式） |
+| `PUT /v1/watermark` | `requireUser` | 保存用户水印配置（text ≤ 60 字；style 可选，含位置/字号/不透明度/颜色四项，缺省即清除自定义回落默认） |
 | `PUT /admin/settings`（扩展） | `requireAdmin` | 新增可选 `watermarkStyle` 校验与保存 |
 
 `/v1/download` 仅面向 Web 登录用户；API key 调用方没有水印配置，继续使用 `/files/*`。非 `/files/` 的结果 URL（如上游直链）前端保持原有 `<a download>` 行为，不做水印。
@@ -67,7 +67,7 @@ tiny-images 的生成结果以原图形式存储在 `DATA_DIR/generated` 并经 
 
 - `api.ts`：`WatermarkConfig` / `WatermarkStyle` 类型；`fetchMyWatermark` / `saveMyWatermark`；`downloadImage(url, filename)`——`/files/` URL 走鉴权下载端点取 blob 后 `a[download]`，其余 URL 回退原 anchor 行为。
 - `App.tsx`：menubar 新增「个人设置」导航入口（`/settings`）。
-- `pages/AccountSettings.tsx`：个人设置页，「下载水印」（启用开关 + 署名文字）与「修改密码」两张卡片，水印配置从顶栏弹窗迁移至此。
+- `pages/AccountSettings.tsx`：个人设置页，「下载水印」（启用开关 + 署名文字 + 位置/字号/不透明度/颜色自定义）与「修改密码」两张卡片，水印配置从顶栏弹窗迁移至此；表单初始值 = 管理员默认样式与用户已存自定义的合并结果。
 - `Playground.tsx` / `History.tsx`：下载改为调用 `downloadImage()`，文件名规则不变。
 - `SettingsTab.tsx`：新增「水印样式」区块（位置下拉、字号、不透明度、颜色、固定前缀）。
 

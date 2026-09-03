@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountSettings from "./AccountSettings";
 
+const STYLE_DEFAULTS = { position: "br", fontSize: 20, opacity: 0.6, color: "#ffffff", prefix: "" };
+
 const apiMocks = vi.hoisted(() => ({
   api: vi.fn(),
   fetchMyWatermark: vi.fn(),
@@ -52,32 +54,73 @@ async function submitForm(index: number): Promise<void> {
 }
 
 describe("AccountSettings", () => {
-  it("loads the per-user watermark config on mount", async () => {
-    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: true, text: "张三" });
+  it("loads the per-user watermark config on mount and falls back to admin defaults", async () => {
+    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: true, text: "张三", style: null, styleDefaults: STYLE_DEFAULTS });
     await renderPage();
 
     expect(container.querySelector<HTMLInputElement>("#wm-enabled")!.checked).toBe(true);
     expect(container.querySelector<HTMLInputElement>("#wm-text")!.value).toBe("张三");
+    expect(container.querySelector<HTMLSelectElement>("#wm-position")!.value).toBe("br");
+    expect(container.querySelector<HTMLInputElement>("#wm-font-size")!.value).toBe("20");
     expect(apiMocks.fetchMyWatermark).toHaveBeenCalledTimes(1);
   });
 
-  it("saves the watermark settings and shows inline confirmation", async () => {
-    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "" });
-    apiMocks.saveMyWatermark.mockResolvedValue({ enabled: true, text: "李四" });
+  it("prefers the user's saved style over the admin defaults", async () => {
+    apiMocks.fetchMyWatermark.mockResolvedValue({
+      enabled: true,
+      text: "张三",
+      style: { position: "tl", fontSize: 48, opacity: 0.9, color: "#ffcc00" },
+      styleDefaults: STYLE_DEFAULTS,
+    });
+    await renderPage();
+
+    expect(container.querySelector<HTMLSelectElement>("#wm-position")!.value).toBe("tl");
+    expect(container.querySelector<HTMLInputElement>("#wm-font-size")!.value).toBe("48");
+    expect(container.querySelector<HTMLInputElement>("#wm-opacity")!.value).toBe("0.9");
+    expect(container.querySelector<HTMLInputElement>("#wm-color")!.value).toBe("#ffcc00");
+  });
+
+  it("saves the watermark settings with the chosen style", async () => {
+    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "", style: null, styleDefaults: STYLE_DEFAULTS });
+    apiMocks.saveMyWatermark.mockResolvedValue({
+      enabled: true,
+      text: "李四",
+      style: { position: "tl", fontSize: 20, opacity: 0.6, color: "#ffffff" },
+      styleDefaults: STYLE_DEFAULTS,
+    });
     await renderPage();
 
     await act(async () => {
       container.querySelector<HTMLInputElement>("#wm-enabled")!.click();
       typeInput("#wm-text", "  李四  ");
+      container.querySelector<HTMLSelectElement>("#wm-position")!.value = "tl";
+      container.querySelector<HTMLSelectElement>("#wm-position")!.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await submitForm(0);
 
-    expect(apiMocks.saveMyWatermark).toHaveBeenCalledWith({ enabled: true, text: "李四" });
+    expect(apiMocks.saveMyWatermark).toHaveBeenCalledWith({
+      enabled: true,
+      text: "李四",
+      style: { position: "tl", fontSize: 20, opacity: 0.6, color: "#ffffff" },
+    });
     expect(container.textContent).toContain("水印设置已保存");
   });
 
+  it("rejects an out-of-range font size without saving", async () => {
+    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "", style: null, styleDefaults: STYLE_DEFAULTS });
+    await renderPage();
+
+    await act(async () => {
+      typeInput("#wm-font-size", "8");
+    });
+    await submitForm(0);
+
+    expect(apiMocks.saveMyWatermark).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("水印字号必须是 12–128 的整数");
+  });
+
   it("changes the password through the auth API and clears the form", async () => {
-    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "" });
+    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "", style: null, styleDefaults: STYLE_DEFAULTS });
     apiMocks.api.mockResolvedValue(undefined);
     await renderPage();
 
@@ -97,7 +140,7 @@ describe("AccountSettings", () => {
   });
 
   it("rejects a short new password without calling the API", async () => {
-    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "" });
+    apiMocks.fetchMyWatermark.mockResolvedValue({ enabled: false, text: "", style: null, styleDefaults: STYLE_DEFAULTS });
     await renderPage();
 
     await act(async () => {
