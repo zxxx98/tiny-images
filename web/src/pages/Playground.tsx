@@ -15,6 +15,7 @@ import {
   optimizePrompt,
   translatePrompt,
   reverseImagePrompt,
+  shareToPlaza,
   ApiError,
   type Announcement,
   type JobKind,
@@ -212,6 +213,10 @@ export default function Playground() {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [revisedPrompts, setRevisedPrompts] = useState<string[]>([]);
+  // 最近一次完成任务的 generationId，用于把单张结果图分享到广场
+  const [lastGenerationId, setLastGenerationId] = useState<number | null>(null);
+  const [sharedShots, setSharedShots] = useState<Record<number, boolean>>({});
+  const [sharingShot, setSharingShot] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activityRef = useRef(0);
@@ -527,6 +532,21 @@ export default function Playground() {
     }
   };
 
+  // 分享结果区第 index 张图到广场；服务端幂等，重复分享返回已有分享
+  const shareImage = async (index: number): Promise<void> => {
+    if (lastGenerationId === null) return;
+    setSharingShot(index);
+    setError(null);
+    try {
+      await shareToPlaza(lastGenerationId, index);
+      setSharedShots((prev) => ({ ...prev, [index]: true }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSharingShot(null);
+    }
+  };
+
   const stopPolling = (): void => {
     activityRef.current += 1;
     if (timerRef.current) {
@@ -549,6 +569,7 @@ export default function Playground() {
         setStatus(job.progress ?? (job.status === "running" ? defaultProgress(kind) : null));
         setImages(job.images.map((i) => i.url));
         setRevisedPrompts(job.images.map((i) => i.revisedPrompt).filter((v): v is string => !!v));
+        if (job.generationId) setLastGenerationId(job.generationId);
         if (job.status === "running") return;
         stopPolling();
         localStorage.removeItem(JOB_KEY);
@@ -584,6 +605,8 @@ export default function Playground() {
     setError(null);
     setImages([]);
     setRevisedPrompts([]);
+    setLastGenerationId(null);
+    setSharedShots({});
     setChannel(null);
     setStatus(null);
     setElapsed(null);
@@ -1230,6 +1253,11 @@ export default function Playground() {
                       {upscaleEnabled && (
                         <button className="btn small" type="button" onClick={() => void loadIntoUpscale(src)}>
                           超分
+                        </button>
+                      )}
+                      {lastGenerationId !== null && !running && (
+                        <button className="btn small" type="button" disabled={sharingShot === i} onClick={() => void shareImage(i)}>
+                          {sharedShots[i] ? "已分享 ✓" : sharingShot === i ? "分享中…" : "分享到广场"}
                         </button>
                       )}
                     </div>

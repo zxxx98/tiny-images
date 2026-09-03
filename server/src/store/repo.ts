@@ -121,6 +121,23 @@ export interface PromptFavoriteRow {
   createdAt: number;
 }
 
+// 广场分享：分享时复制图片文件到 dataDir/plaza 并快照生成信息，独立于历史记录的过期清理
+export interface PlazaShareRow {
+  id: number;
+  createdAt: number;
+  userId: number;
+  generationId: number | null;
+  file: string;
+  width: number | null;
+  height: number | null;
+  model: string | null;
+  prompt: string;
+  revisedPrompt: string | null;
+  authorEmail: string | null;
+}
+
+export type NewPlazaShare = Omit<PlazaShareRow, "id" | "authorEmail">;
+
 // 提示词优化用的 OpenAI 兼容 chat 接口配置；baseUrl/model 任一为空视为未启用
 export interface PromptOptimizerSettings {
   baseUrl: string;
@@ -685,6 +702,15 @@ export class Repo {
     return gen;
   }
 
+  // 读取一条生成历史并按 listGenerations 的可见性规则鉴权；不存在或不可见返回 null
+  getGenerationVisible(viewer: GenerationViewer, id: number): GenerationRow | null {
+    const row = this.db.prepare("SELECT * FROM generations WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const gen = this.toGeneration(row);
+    if (!this.generationVisibleTo(viewer, gen)) return null;
+    return gen;
+  }
+
   private generationVisibleTo(viewer: GenerationViewer, row: GenerationRow): boolean {
     if (viewer.admin) return true;
     if (viewer.userId !== null) {
@@ -721,6 +747,68 @@ export class Repo {
       latencyMs: r.latency_ms === null ? null : Number(r.latency_ms),
       errorMessage: r.error_message === null ? null : String(r.error_message),
       images: String(r.images),
+    };
+  }
+
+  // ---- plaza shares（广场分享）----
+
+  insertPlazaShare(e: NewPlazaShare): PlazaShareRow {
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO plaza_shares (created_at, user_id, generation_id, file, width, height, model, prompt, revised_prompt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(e.createdAt, e.userId, e.generationId, e.file, e.width, e.height, e.model, e.prompt, e.revisedPrompt);
+    } catch {
+      // 唯一索引冲突：同一用户重复分享同一张图，回落为读取已有记录（幂等）
+    }
+    const row = this.db
+      .prepare("SELECT * FROM plaza_shares WHERE user_id = ? AND file = ?")
+      .get(e.userId, e.file) as Record<string, unknown> | undefined;
+    if (!row) throw new Error("failed to insert plaza share");
+    return this.toPlazaShare(row);
+  }
+
+  listPlazaShares(before: number | null, limit: number, mineUserId: number | null = null): PlazaShareRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.*, u.email AS author_email
+         FROM plaza_shares p LEFT JOIN users u ON u.id = p.user_id
+         WHERE (? IS NULL OR p.id < ?) AND (? IS NULL OR p.user_id = ?)
+         ORDER BY p.id DESC LIMIT ?`,
+      )
+      .all(before, before, mineUserId, mineUserId, limit) as Record<string, unknown>[];
+    return rows.map((r) => this.toPlazaShare(r));
+  }
+
+  getPlazaShare(id: number): PlazaShareRow | null {
+    const row = this.db
+      .prepare("SELECT p.*, u.email AS author_email FROM plaza_shares p LEFT JOIN users u ON u.id = p.user_id WHERE p.id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.toPlazaShare(row) : null;
+  }
+
+  deletePlazaShare(id: number): PlazaShareRow | null {
+    const row = this.getPlazaShare(id);
+    if (!row) return null;
+    this.db.prepare("DELETE FROM plaza_shares WHERE id = ?").run(id);
+    return row;
+  }
+
+  private toPlazaShare(r: Record<string, unknown>): PlazaShareRow {
+    return {
+      id: Number(r.id),
+      createdAt: Number(r.created_at),
+      userId: Number(r.user_id),
+      generationId: r.generation_id === null || r.generation_id === undefined ? null : Number(r.generation_id),
+      file: String(r.file),
+      width: r.width === null || r.width === undefined ? null : Number(r.width),
+      height: r.height === null || r.height === undefined ? null : Number(r.height),
+      model: r.model === null || r.model === undefined ? null : String(r.model),
+      prompt: String(r.prompt),
+      revisedPrompt: r.revised_prompt === null || r.revised_prompt === undefined ? null : String(r.revised_prompt),
+      authorEmail: r.author_email === null || r.author_email === undefined ? null : String(r.author_email),
     };
   }
 

@@ -6,6 +6,7 @@ import FormDialog from "./pages/FormDialog";
 import Admin from "./pages/Admin";
 import Guide from "./pages/Guide";
 import History from "./pages/History";
+import Plaza from "./pages/Plaza";
 import Login from "./pages/Login";
 import Playground from "./pages/Playground";
 import Register from "./pages/Register";
@@ -50,6 +51,7 @@ const TITLES: Record<string, string> = {
   "/": "Playground",
   "/status": "模型状态",
   "/history": "历史",
+  "/plaza": "广场",
   "/admin": "管理后台",
   "/guide": "API 指南",
   "/login": "登录",
@@ -160,6 +162,9 @@ export default function App() {
           <NavLink to="/history" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
             历史
           </NavLink>
+          <NavLink to="/plaza" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
+            广场 <span className="badge-new">NEW!</span>
+          </NavLink>
           {getRole() === "admin" && (
             <NavLink to="/admin" className={({ isActive }) => `nav-btn ${isActive ? "active" : ""}`}>
               管理后台
@@ -237,6 +242,14 @@ export default function App() {
               element={
                 <RequireToken setupNeeded={setupNeeded}>
                   <History />
+                </RequireToken>
+              }
+            />
+            <Route
+              path="/plaza"
+              element={
+                <RequireToken setupNeeded={setupNeeded}>
+                  <Plaza />
                 </RequireToken>
               }
             />

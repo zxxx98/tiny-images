@@ -138,6 +138,22 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS prompt_favorites_user ON prompt_favorites(user_id, id DESC);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS plaza_shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    generation_id INTEGER,
+    file TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    model TEXT,
+    prompt TEXT NOT NULL DEFAULT '',
+    revised_prompt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS plaza_shares_cursor ON plaza_shares(id DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS plaza_shares_user_file ON plaza_shares(user_id, file);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

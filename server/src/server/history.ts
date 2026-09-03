@@ -27,6 +27,7 @@ function serializeJob(ctx: AppContext, req: FastifyRequest, job: JobRecord): Rec
     latencyMs: job.latencyMs,
     error: job.errorMessage,
     createdAt: job.createdAt,
+    generationId: job.generationId,
     images: toApiImages(ctx, req, job.images),
   };
 }

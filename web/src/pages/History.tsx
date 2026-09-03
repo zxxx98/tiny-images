@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, deleteHistoryItem } from "../api";
+import { api, deleteHistoryItem, shareToPlaza } from "../api";
 import Lightbox from "./Lightbox";
 
 interface HistoryImage {
@@ -105,6 +105,8 @@ export default function History() {
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [sharedKeys, setSharedKeys] = useState<Record<string, boolean>>({});
+  const [sharingKey, setSharingKey] = useState<string | null>(null);
   const [loadedImageSizes, setLoadedImageSizes] = useState<Record<string, ImageDimensions>>({});
   const navigate = useNavigate();
 
@@ -179,6 +181,21 @@ export default function History() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // 分享该记录中的单张图到广场；服务端幂等，重复分享返回已有分享
+  const shareImage = async (item: HistoryItem, index: number): Promise<void> => {
+    const key = `${item.id}:${index}`;
+    setSharingKey(key);
+    setError(null);
+    try {
+      await shareToPlaza(item.id, index);
+      setSharedKeys((prev) => ({ ...prev, [key]: true }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSharingKey(null);
     }
   };
 
@@ -289,6 +306,13 @@ export default function History() {
                       </button>
                       <button className="btn small" onClick={() => reverseImage(img.url)}>
                         反推
+                      </button>
+                      <button
+                        className="btn small"
+                        disabled={sharingKey === `${detail.id}:${i}`}
+                        onClick={() => void shareImage(detail, i)}
+                      >
+                        {sharedKeys[`${detail.id}:${i}`] ? "已分享 ✓" : sharingKey === `${detail.id}:${i}` ? "分享中…" : "分享到广场"}
                       </button>
                       <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
                         下载
