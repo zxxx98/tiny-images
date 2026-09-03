@@ -178,10 +178,24 @@ export const DEFAULT_WATERMARK_STYLE: WatermarkStyle = {
   prefix: "",
 };
 
-// 用户自身水印配置：enabled 控制下载时是否打水印，text 为署名文字
+// 用户自定义的水印样式（不含固定前缀）：未覆盖的字段回落到管理员的集中配置
+export interface UserWatermarkStyle {
+  position: WatermarkPosition;
+  fontSize: number;
+  opacity: number;
+  color: string;
+}
+
+// 用户自身水印配置：enabled 控制下载时是否打水印，text 为署名文字，style 为 null 时完全跟随管理员默认样式
 export interface UserWatermark {
   enabled: boolean;
   text: string;
+  style: UserWatermarkStyle | null;
+}
+
+// 生效样式 = 管理员集中配置 + 用户自定义覆盖；固定前缀始终以管理员配置为准
+export function effectiveWatermarkStyle(defaultStyle: WatermarkStyle, userStyle: UserWatermarkStyle | null): WatermarkStyle {
+  return userStyle ? { ...defaultStyle, ...userStyle } : defaultStyle;
 }
 
 export interface AppSettings {
@@ -252,12 +266,37 @@ function parseWatermarkStyle(raw: string | undefined): WatermarkStyle {
   }
 }
 
+function parseUserWatermarkStyle(value: unknown): UserWatermarkStyle | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  if (
+    !WATERMARK_POSITIONS.includes(source.position as WatermarkPosition) ||
+    typeof source.fontSize !== "number" ||
+    !Number.isInteger(source.fontSize) ||
+    source.fontSize < 12 ||
+    source.fontSize > 128 ||
+    typeof source.opacity !== "number" ||
+    source.opacity < 0.1 ||
+    source.opacity > 1 ||
+    typeof source.color !== "string" ||
+    !/^#[0-9a-fA-F]{6}$/.test(source.color)
+  ) {
+    return null;
+  }
+  return {
+    position: source.position as WatermarkPosition,
+    fontSize: source.fontSize,
+    opacity: source.opacity,
+    color: source.color,
+  };
+}
+
 function parseUserWatermark(raw: unknown): UserWatermark | null {
   if (typeof raw !== "string" || raw === "") return null;
   try {
     const parsed = JSON.parse(raw) as Partial<UserWatermark> | null;
     if (!parsed || typeof parsed.enabled !== "boolean" || typeof parsed.text !== "string") return null;
-    return { enabled: parsed.enabled, text: parsed.text };
+    return { enabled: parsed.enabled, text: parsed.text, style: parseUserWatermarkStyle(parsed.style) };
   } catch {
     return null;
   }
@@ -1066,7 +1105,7 @@ export class Repo {
   }
 
   getWatermark(userId: number): UserWatermark {
-    return this.getUser(userId)?.watermark ?? { enabled: false, text: "" };
+    return this.getUser(userId)?.watermark ?? { enabled: false, text: "", style: null };
   }
 
   setWatermark(userId: number, watermark: UserWatermark): void {

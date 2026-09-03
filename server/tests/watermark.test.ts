@@ -12,7 +12,7 @@ import { openDb } from "../src/store/db.js";
 import { Repo } from "../src/store/repo.js";
 import { hashPassword } from "../src/core/password.js";
 import { applyWatermark, composeWatermarkText } from "../src/media/watermark.js";
-import { DEFAULT_WATERMARK_STYLE } from "../src/store/repo.js";
+import { DEFAULT_WATERMARK_STYLE, effectiveWatermarkStyle } from "../src/store/repo.js";
 
 let dir: string;
 let repo: Repo;
@@ -71,6 +71,14 @@ describe("watermark text composition", () => {
     expect(composeWatermarkText(" ", "")).toBe("");
   });
 
+  it("effectiveWatermarkStyle merges user style over the admin default", () => {
+    const userStyle = { position: "tl" as const, fontSize: 32, opacity: 0.9, color: "#000000" };
+    expect(effectiveWatermarkStyle(DEFAULT_WATERMARK_STYLE, userStyle)).toEqual({ ...userStyle, prefix: "" });
+    expect(effectiveWatermarkStyle(DEFAULT_WATERMARK_STYLE, null)).toEqual(DEFAULT_WATERMARK_STYLE);
+    const withPrefix = { ...DEFAULT_WATERMARK_STYLE, prefix: "站名" };
+    expect(effectiveWatermarkStyle(withPrefix, userStyle).prefix).toBe("站名");
+  });
+
   it("applyWatermark keeps dimensions and changes bytes", async () => {
     const buf = await sharp({ create: { width: 96, height: 48, channels: 3, background: { r: 0, g: 0, b: 0 } } }).png().toBuffer();
     const out = await applyWatermark(buf, DEFAULT_WATERMARK_STYLE, "张三");
@@ -97,13 +105,57 @@ describe("user watermark config endpoints", () => {
   it("saves and reads the per-user watermark", async () => {
     const saved = await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "  张三  " } });
     expect(saved.statusCode).toBe(200);
-    expect(saved.json()).toEqual({ enabled: true, text: "张三" });
-    expect((await app.inject({ url: "/v1/watermark", headers: H2 })).json()).toEqual({ enabled: true, text: "张三" });
+    expect(saved.json()).toEqual({ enabled: true, text: "张三", style: null, styleDefaults: DEFAULT_WATERMARK_STYLE });
+    expect((await app.inject({ url: "/v1/watermark", headers: H2 })).json()).toEqual({
+      enabled: true,
+      text: "张三",
+      style: null,
+      styleDefaults: DEFAULT_WATERMARK_STYLE,
+    });
+  });
+
+  it("saves and applies a custom user style on download", async () => {
+    const original = await writeFixtureImage();
+    await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "张三" } });
+    const withDefault = await app.inject({ url: `/v1/download/${FILE_NAME}`, headers: H2 });
+
+    const style = { position: "tl", fontSize: 48, opacity: 1, color: "#ff0000" };
+    const saved = await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "张三", style } });
+    expect(saved.statusCode).toBe(200);
+    expect((saved.json() as { style: unknown }).style).toEqual(style);
+
+    const withCustom = await app.inject({ url: `/v1/download/${FILE_NAME}`, headers: H2 });
+    expect(withCustom.statusCode).toBe(200);
+    expect(Buffer.compare(withCustom.rawPayload, withDefault.rawPayload)).not.toBe(0);
+    const meta = await sharp(withCustom.rawPayload).metadata();
+    expect(meta.width).toBe(96);
+    expect(meta.height).toBe(48);
+  });
+
+  it("rejects invalid user styles and resets on missing style", async () => {
+    const cases = [
+      { position: "middle", fontSize: 24, opacity: 0.5, color: "#ffffff" },
+      { position: "tl", fontSize: 8, opacity: 0.5, color: "#ffffff" },
+      { position: "tl", fontSize: 24, opacity: 2, color: "#ffffff" },
+      { position: "tl", fontSize: 24, opacity: 0.5, color: "white" },
+    ];
+    for (const style of cases) {
+      const res = await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "x", style } });
+      expect(res.statusCode).toBe(400);
+    }
+    const reset = await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "x" } });
+    expect(reset.statusCode).toBe(200);
+    expect((reset.json() as { style: unknown }).style).toBeNull();
   });
 
   it("isolates watermark config per user", async () => {
     await app.inject({ method: "PUT", url: "/v1/watermark", headers: H2, payload: { enabled: true, text: "user" } });
-    expect((await app.inject({ url: "/v1/watermark", headers: H })).json()).toEqual({ enabled: false, text: "" });
+    expect((await app.inject({ url: "/v1/watermark", headers: H })).json()).toEqual({
+      enabled: false,
+      text: "",
+      style: null,
+      styleDefaults: DEFAULT_WATERMARK_STYLE,
+    });
   });
 
   it("rejects invalid payloads", async () => {

@@ -1,10 +1,23 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, fetchMyWatermark, saveMyWatermark, type WatermarkConfig } from "../api";
+import { api, fetchMyWatermark, saveMyWatermark, type UserWatermarkStyle, type WatermarkConfig } from "../api";
 
-// 个人设置：登录用户自助维护账号相关配置（下载水印署名、登录密码）。
-// 水印样式（位置/字号/颜色/前缀）由管理员在「管理后台 → 设置」集中配置，这里只管开关与署名。
+// 个人设置：登录用户自助维护账号相关配置（下载水印署名与样式、登录密码）。
+// 固定前缀由管理员集中配置；位置/字号/不透明度/颜色可在下方自定义，未设置前跟随管理员默认。
+function mergedStyle(config: WatermarkConfig): UserWatermarkStyle {
+  return {
+    position: config.style?.position ?? config.styleDefaults.position,
+    fontSize: config.style?.fontSize ?? config.styleDefaults.fontSize,
+    opacity: config.style?.opacity ?? config.styleDefaults.opacity,
+    color: config.style?.color ?? config.styleDefaults.color,
+  };
+}
+
 export default function AccountSettings() {
-  const [wm, setWm] = useState<WatermarkConfig>({ enabled: false, text: "" });
+  const [wm, setWm] = useState<{ enabled: boolean; text: string; style: UserWatermarkStyle }>({
+    enabled: false,
+    text: "",
+    style: { position: "br", fontSize: 20, opacity: 0.6, color: "#ffffff" },
+  });
   const [wmLoading, setWmLoading] = useState(true);
   const [wmSaving, setWmSaving] = useState(false);
   const [wmMessage, setWmMessage] = useState<string | null>(null);
@@ -21,7 +34,7 @@ export default function AccountSettings() {
     setWmLoading(true);
     fetchMyWatermark()
       .then((config) => {
-        if (active) setWm(config);
+        if (active) setWm({ enabled: config.enabled, text: config.text, style: mergedStyle(config) });
       })
       .catch((err) => {
         if (active) setWmError(err instanceof Error ? err.message : "加载水印设置失败");
@@ -36,12 +49,20 @@ export default function AccountSettings() {
 
   const submitWatermark = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    setWmSaving(true);
     setWmMessage(null);
     setWmError(null);
+    if (!Number.isInteger(wm.style.fontSize) || wm.style.fontSize < 12 || wm.style.fontSize > 128) {
+      setWmError("水印字号必须是 12–128 的整数");
+      return;
+    }
+    if (Number.isNaN(wm.style.opacity) || wm.style.opacity < 0.1 || wm.style.opacity > 1) {
+      setWmError("水印不透明度必须在 0.1–1 之间");
+      return;
+    }
+    setWmSaving(true);
     try {
-      const saved = await saveMyWatermark({ enabled: wm.enabled, text: wm.text.trim() });
-      setWm(saved);
+      const saved = await saveMyWatermark({ enabled: wm.enabled, text: wm.text.trim(), style: wm.style });
+      setWm({ enabled: saved.enabled, text: saved.text, style: mergedStyle(saved) });
       setWmMessage("水印设置已保存");
     } catch (err) {
       setWmError(err instanceof Error ? err.message : "保存失败");
@@ -114,7 +135,56 @@ export default function AccountSettings() {
             placeholder="如：张三"
             spellCheck={false}
           />
-          <p className="muted">样式（位置、字号、颜色、前缀）由管理员统一配置；水印只加在下载的副本上，原图与 API 返回不受影响。</p>
+          <label htmlFor="wm-position">水印位置</label>
+          <select
+            id="wm-position"
+            value={wm.style.position}
+            disabled={wmLoading || wmSaving}
+            onChange={(event) => setWm((cur) => ({ ...cur, style: { ...cur.style, position: event.target.value as UserWatermarkStyle["position"] } }))}
+          >
+            <option value="tl">左上</option>
+            <option value="tc">中上</option>
+            <option value="tr">右上</option>
+            <option value="bl">左下</option>
+            <option value="bc">中下</option>
+            <option value="br">右下</option>
+          </select>
+          <label htmlFor="wm-font-size">字号（12–128）</label>
+          <input
+            id="wm-font-size"
+            type="number"
+            min={12}
+            max={128}
+            step={1}
+            value={wm.style.fontSize}
+            disabled={wmLoading || wmSaving}
+            onChange={(event) => setWm((cur) => ({ ...cur, style: { ...cur.style, fontSize: Number(event.target.value) } }))}
+            spellCheck={false}
+          />
+          <label htmlFor="wm-opacity">不透明度（0.1–1）</label>
+          <input
+            id="wm-opacity"
+            type="number"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={wm.style.opacity}
+            disabled={wmLoading || wmSaving}
+            onChange={(event) => setWm((cur) => ({ ...cur, style: { ...cur.style, opacity: Number(event.target.value) } }))}
+            spellCheck={false}
+          />
+          <label htmlFor="wm-color">文字颜色</label>
+          <input
+            id="wm-color"
+            type="color"
+            value={wm.style.color}
+            disabled={wmLoading || wmSaving}
+            onChange={(event) => setWm((cur) => ({ ...cur, style: { ...cur.style, color: event.target.value } }))}
+          />
+          <p className="muted">
+            位置、字号、不透明度、颜色可自行调整，未自定义前跟随管理员的默认配置；「固定前缀」（如站名）始终由管理员统一附加。水印只加在下载的副本上，原图与
+            API 返回不受影响。
+          </p>
           <button className="btn primary" type="submit" disabled={wmLoading || wmSaving}>
             {wmSaving ? "保存中…" : "保存水印设置"}
           </button>

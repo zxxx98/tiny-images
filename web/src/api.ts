@@ -290,9 +290,20 @@ export const DEFAULT_WATERMARK_STYLE: WatermarkStyle = {
   prefix: "",
 };
 
+// 用户自定义的水印样式（不含固定前缀）：未覆盖的字段回落到管理员的集中配置
+export interface UserWatermarkStyle {
+  position: WatermarkPosition;
+  fontSize: number;
+  opacity: number;
+  color: string;
+}
+
+// styleDefaults 为管理员的集中配置（未自定义字段的默认值）；style 为 null 表示完全跟随默认
 export interface WatermarkConfig {
   enabled: boolean;
   text: string;
+  style: UserWatermarkStyle | null;
+  styleDefaults: WatermarkStyle;
 }
 
 export interface AppSettings {
@@ -458,7 +469,7 @@ export const deletePlazaShare = (id: number): Promise<void> => api<void>(`/v1/pl
 
 export const fetchMyWatermark = (): Promise<WatermarkConfig> => api<WatermarkConfig>("/v1/watermark");
 
-export const saveMyWatermark = (config: WatermarkConfig): Promise<WatermarkConfig> =>
+export const saveMyWatermark = (config: { enabled: boolean; text: string; style?: UserWatermarkStyle | null }): Promise<WatermarkConfig> =>
   api<WatermarkConfig>("/v1/watermark", { method: "PUT", body: config });
 
 // /files/ 结果走鉴权下载端点（按用户水印配置按需合成）；其余 URL 保持浏览器直下行为
