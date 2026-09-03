@@ -271,6 +271,30 @@ export interface RegistrationSettings {
   dailyQuota: number;
 }
 
+// 下载水印：样式由管理员集中配置，署名文字按用户各自保存
+export type WatermarkPosition = "tl" | "tc" | "tr" | "bl" | "bc" | "br";
+
+export interface WatermarkStyle {
+  position: WatermarkPosition;
+  fontSize: number;
+  opacity: number;
+  color: string;
+  prefix: string;
+}
+
+export const DEFAULT_WATERMARK_STYLE: WatermarkStyle = {
+  position: "br",
+  fontSize: 20,
+  opacity: 0.6,
+  color: "#ffffff",
+  prefix: "",
+};
+
+export interface WatermarkConfig {
+  enabled: boolean;
+  text: string;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
@@ -278,6 +302,7 @@ export interface AppSettings {
   promptOptimizer: PromptOptimizerSettings;
   promptReverse: PromptReverseSettings;
   registration: RegistrationSettings;
+  watermarkStyle: WatermarkStyle;
 }
 
 export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admin/settings");
@@ -287,6 +312,7 @@ export const saveSettings = (
     promptOptimizer?: PromptOptimizerSettings;
     promptReverse?: PromptReverseSettings;
     registration?: RegistrationSettings;
+    watermarkStyle?: WatermarkStyle;
   },
 ): Promise<AppSettings> => api<AppSettings>("/admin/settings", { method: "PUT", body: input });
 
@@ -390,3 +416,39 @@ export function fetchJob(id: string): Promise<JobStatus> {
 
 // 删除一条生成历史（服务端会连带删除其图片文件）
 export const deleteHistoryItem = (id: number): Promise<void> => api<void>(`/v1/history/${id}`, { method: "DELETE" });
+
+// ---- 下载水印 ----
+
+export const fetchMyWatermark = (): Promise<WatermarkConfig> => api<WatermarkConfig>("/v1/watermark");
+
+export const saveMyWatermark = (config: WatermarkConfig): Promise<WatermarkConfig> =>
+  api<WatermarkConfig>("/v1/watermark", { method: "PUT", body: config });
+
+// /files/ 结果走鉴权下载端点（按用户水印配置按需合成）；其余 URL 保持浏览器直下行为
+const DOWNLOAD_NAME_RE = /^\/files\/([0-9a-f]{32}\.(?:png|jpe?g|webp))$/;
+
+export async function downloadImage(url: string, filename: string): Promise<void> {
+  const anchor = document.createElement("a");
+  const match = DOWNLOAD_NAME_RE.exec(url);
+  if (!match) {
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    return;
+  }
+  const res = await fetch(`/v1/download/${match[1]}`, { headers: { authorization: `Bearer ${getToken()}` } });
+  if (res.status === 401 && window.location.pathname !== "/login") {
+    clearToken();
+    window.location.assign("/login");
+  }
+  if (!res.ok) {
+    const parsed = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new ApiError(res.status, parsed);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}

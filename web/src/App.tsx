@@ -1,6 +1,6 @@
 import { Component, FormEvent, ReactNode, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { api, clearToken, fetchMe, fetchSetupNeeded, getRole, getToken, QUOTA_EVENT, setRole, type Me } from "./api";
+import { api, clearToken, fetchMe, fetchMyWatermark, fetchSetupNeeded, getRole, getToken, QUOTA_EVENT, saveMyWatermark, setRole, type Me } from "./api";
 import { APP_VERSION, GIT_HASH } from "./version";
 import FormDialog from "./pages/FormDialog";
 import Admin from "./pages/Admin";
@@ -80,6 +80,11 @@ export default function App() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [pwdError, setPwdError] = useState<string | null>(null);
+  const [wmOpen, setWmOpen] = useState(false);
+  const [wmEnabled, setWmEnabled] = useState(false);
+  const [wmText, setWmText] = useState("");
+  const [wmSaving, setWmSaving] = useState(false);
+  const [wmError, setWmError] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] ?? "tiny-images"} · tiny-images 95`;
@@ -136,6 +141,39 @@ export default function App() {
       setPwdError(err instanceof Error ? err.message : "修改失败");
     }
   };
+
+  const openWatermark = (): void => {
+    setWmOpen(true);
+    setWmError(null);
+    setWmEnabled(false);
+    setWmText("");
+    fetchMyWatermark()
+      .then((config) => {
+        setWmEnabled(config.enabled);
+        setWmText(config.text);
+      })
+      .catch((err) => setWmError(err instanceof Error ? err.message : "加载水印设置失败"));
+  };
+
+  const closeWatermark = (): void => {
+    setWmOpen(false);
+    setWmError(null);
+  };
+
+  const submitWatermark = async (e: FormEvent): Promise<void> => {
+    e.preventDefault();
+    setWmError(null);
+    setWmSaving(true);
+    try {
+      await saveMyWatermark({ enabled: wmEnabled, text: wmText.trim() });
+      closeWatermark();
+      window.alert("水印设置已保存");
+    } catch (err) {
+      setWmError(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setWmSaving(false);
+    }
+  };
   return (
     <div className="app">
       <header className="titlebar">
@@ -180,6 +218,13 @@ export default function App() {
           </span>
         )}
         {getToken() && (
+          <span className="tip" data-tip="下载图片时附加的个人署名水印">
+            <button className="btn small" onClick={openWatermark}>
+              水印
+            </button>
+          </span>
+        )}
+        {getToken() && (
           <button className="btn small" onClick={logout}>
             登出
           </button>
@@ -203,6 +248,42 @@ export default function App() {
                 确认修改
               </button>
               <button className="btn ghost" type="button" onClick={closePwdDialog}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
+      )}
+      {wmOpen && (
+        <FormDialog title="下载水印" onClose={closeWatermark}>
+          {wmError && (
+            <div className="error" role="alert">
+              {wmError}
+            </div>
+          )}
+          <form onSubmit={submitWatermark}>
+            <div className="check-row">
+              <input id="wm-enabled" type="checkbox" checked={wmEnabled} onChange={(e) => setWmEnabled(e.target.checked)} />
+              <label htmlFor="wm-enabled" className="check-label">
+                下载图片时附加我的水印
+              </label>
+            </div>
+            <label htmlFor="wm-text">署名文字</label>
+            <input
+              id="wm-text"
+              type="text"
+              value={wmText}
+              maxLength={60}
+              onChange={(e) => setWmText(e.target.value)}
+              placeholder="如：张三"
+              spellCheck={false}
+            />
+            <p className="muted">样式（位置、字号、颜色、前缀）由管理员统一配置；水印只加在下载的副本上，原图与 API 返回不受影响。</p>
+            <div className="row">
+              <button className="btn primary" type="submit" disabled={wmSaving}>
+                {wmSaving ? "保存中…" : "保存"}
+              </button>
+              <button className="btn ghost" type="button" onClick={closeWatermark}>
                 取消
               </button>
             </div>

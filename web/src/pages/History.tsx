@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, deleteHistoryItem } from "../api";
+import { api, deleteHistoryItem, downloadImage } from "../api";
 import Lightbox from "./Lightbox";
 
 interface HistoryImage {
@@ -290,9 +290,16 @@ export default function History() {
                       <button className="btn small" onClick={() => reverseImage(img.url)}>
                         反推
                       </button>
-                      <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
+                      <button
+                        className="btn small"
+                        onClick={() =>
+                          void downloadImage(img.url, `tiny-images-${detail.id}-${i + 1}.png`).catch((err) =>
+                            window.alert(`下载失败：${err instanceof Error ? err.message : String(err)}`),
+                          )
+                        }
+                      >
                         下载
-                      </a>
+                      </button>
                     </div>
                   </figure>
                 ))}
