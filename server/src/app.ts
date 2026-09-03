@@ -103,8 +103,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setNotFoundHandler((req, reply) => {
     const url = req.raw.url ?? "/";
-    // /admin 是前端 SPA 路由，浏览器直达/刷新时回落到 index.html；其余 API 前缀保持 JSON 404
-    if (req.method === "GET" && (url === "/admin" || url === "/admin/") && hasWeb) {
+    // /admin 是前端 SPA 路由（含 /admin?tab=… 直达/刷新），回落到 index.html；其余 API 前缀保持 JSON 404
+    if (req.method === "GET" && (url === "/admin" || url === "/admin/" || url.startsWith("/admin?")) && hasWeb) {
       reply.type("text/html").sendFile("index.html");
       return;
     }
