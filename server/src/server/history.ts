@@ -1,4 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import fs from "node:fs";
+import path from "node:path";
 import type { AppContext } from "../app.js";
 import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest } from "../core/types.js";
@@ -161,6 +163,32 @@ async function runEditJob(
   }
 }
 
+// 删除记录引用的本地生成图；文件已过期被清理或名字异常时静默跳过
+function deleteRowFiles(dataDir: string, row: GenerationRow): void {
+  let images: { file?: unknown }[];
+  try {
+    images = JSON.parse(row.images || "[]");
+  } catch {
+    return;
+  }
+  for (const img of images) {
+    if (typeof img?.file !== "string" || !/^[0-9a-f]{32}\.(?:png|jpe?g|webp)$/.test(img.file)) continue;
+    try {
+      fs.rmSync(path.join(dataDir, "generated", img.file), { force: true });
+    } catch {
+      // 文件可能已被并发删除
+    }
+  }
+}
+
+function historyViewer(req: FastifyRequest): { admin: boolean; userId: number | null; apiKeyId: number | null } {
+  return {
+    admin: req.callerRole === "admin",
+    userId: req.callerUserId ?? null,
+    apiKeyId: req.callerApiKeyId ?? null,
+  };
+}
+
 export function registerHistory(ctx: AppContext): void {
   ctx.app.post("/v1/images/jobs", { preHandler: ctx.requireApiKey }, async (req, reply) => {
     const { model, req: genReq } = validateGenBody(req.body);
@@ -233,12 +261,20 @@ export function registerHistory(ctx: AppContext): void {
       before = Number.parseInt(q.before, 10);
       if (Number.isNaN(before)) throw new ValidationError("'before' must be an integer id");
     }
-    const viewer = {
-      admin: req.callerRole === "admin",
-      userId: req.callerUserId ?? null,
-      apiKeyId: req.callerApiKeyId ?? null,
-    };
+    const viewer = historyViewer(req);
     const rows = ctx.deps.repo.listGenerations(viewer, before, limit);
     return { items: rows.map((r) => serializeRow(ctx, req, r)) };
+  });
+
+  ctx.app.delete("/v1/history/:id", { preHandler: ctx.requireApiKey }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const recordId = Number.parseInt(id, 10);
+    if (Number.isNaN(recordId)) throw new ValidationError("'id' must be an integer");
+    const row = ctx.deps.repo.deleteGeneration(historyViewer(req), recordId);
+    if (!row) {
+      return reply.code(404).send({ error: { message: "record not found", type: "invalid_request_error", code: null } });
+    }
+    deleteRowFiles(ctx.deps.env.dataDir, row);
+    return reply.code(204).send();
   });
 }

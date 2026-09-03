@@ -361,3 +361,6 @@ export function createUpscaleJob(form: FormData): Promise<{ jobId: string }> {
 export function fetchJob(id: string): Promise<JobStatus> {
   return api<JobStatus>(`/v1/images/jobs/${id}`);
 }
+
+// 删除一条生成历史（服务端会连带删除其图片文件）
+export const deleteHistoryItem = (id: number): Promise<void> => api<void>(`/v1/history/${id}`, { method: "DELETE" });

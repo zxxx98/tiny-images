@@ -636,6 +636,26 @@ export class Repo {
     return rows.map((r) => this.toGeneration(r));
   }
 
+  // 删除一条生成历史（按 listGenerations 的可见性规则鉴权），返回被删行供调用方清理图片文件；不存在或不可见返回 null
+  deleteGeneration(viewer: GenerationViewer, id: number): GenerationRow | null {
+    const row = this.db.prepare("SELECT * FROM generations WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const gen = this.toGeneration(row);
+    if (!this.generationVisibleTo(viewer, gen)) return null;
+    this.db.prepare("DELETE FROM generations WHERE id = ?").run(id);
+    return gen;
+  }
+
+  private generationVisibleTo(viewer: GenerationViewer, row: GenerationRow): boolean {
+    if (viewer.admin) return true;
+    if (viewer.userId !== null) {
+      if (row.userId === viewer.userId) return true;
+      if (row.apiKeyId === null) return false;
+      return !!this.db.prepare("SELECT 1 FROM api_keys WHERE id = ? AND user_id = ?").get(row.apiKeyId, viewer.userId);
+    }
+    return viewer.apiKeyId !== null && row.apiKeyId === viewer.apiKeyId;
+  }
+
   failPendingGenerations(message: string): number {
     const res = this.db
       .prepare(`UPDATE generations SET status = 'error', error_message = ? WHERE status = 'pending'`)

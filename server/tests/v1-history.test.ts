@@ -299,6 +299,60 @@ describe("GET /v1/history", () => {
   });
 });
 
+describe("DELETE /v1/history/:id", () => {
+  it("deletes own record, removes its generated files, and answers 204", async () => {
+    await start();
+    fs.mkdirSync(path.join(dir, "generated"), { recursive: true });
+    const file = `${"a".repeat(32)}.png`;
+    fs.writeFileSync(path.join(dir, "generated", file), PNG_BUF);
+    const id = repo.insertGeneration({ createdAt: 1, apiKeyId, userId: null, model: "m", prompt: "p1", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: JSON.stringify([{ file, width: 1, height: 1 }]) });
+
+    const res = await app.inject({ method: "DELETE", url: `/v1/history/${id}`, headers: auth() });
+
+    expect(res.statusCode).toBe(204);
+    expect(repo.listGenerations({ admin: false, userId: null, apiKeyId }, null, 10)).toHaveLength(0);
+    expect(fs.existsSync(path.join(dir, "generated", file))).toBe(false);
+  });
+
+  it("answers 400 for malformed ids and 404 for unknown or other keys' records", async () => {
+    await start();
+    const other = repo.createApiKey("k2");
+    const id = repo.insertGeneration({ createdAt: 1, apiKeyId: other.id, userId: null, model: "m", prompt: "p2", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${id}`, headers: auth() })).statusCode).toBe(404);
+    expect((await app.inject({ method: "DELETE", url: "/v1/history/999999", headers: auth() })).statusCode).toBe(404);
+    expect((await app.inject({ method: "DELETE", url: "/v1/history/abc", headers: auth() })).statusCode).toBe(400);
+  });
+
+  it("lets users delete their own web and key records but not others'; admins delete any", async () => {
+    await start();
+    const hash = (await import("../src/core/password.js")).hashPassword;
+    const u1 = repo.createUser({ email: "u1@x.com", passwordHash: hash("pw-123456"), role: "user", quotaTotal: 100 });
+    const u2 = repo.createUser({ email: "u2@x.com", passwordHash: hash("pw-123456"), role: "user", quotaTotal: 100 });
+    repo.createUser({ email: "admin@x.com", passwordHash: hash("pw-123456"), role: "admin", quotaTotal: null });
+    const u1key = repo.createApiKey("u1-k", u1.id);
+    const u1row = repo.insertGeneration({ createdAt: 1, apiKeyId: null, userId: u1.id, model: "m", prompt: "u1-web", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    const u1keyRow = repo.insertGeneration({ createdAt: 2, apiKeyId: u1key.id, userId: null, model: "m", prompt: "u1-key", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+    const u2row = repo.insertGeneration({ createdAt: 3, apiKeyId: null, userId: u2.id, model: "m", prompt: "u2-web", params: "{}", status: "ok", channelId: null, latencyMs: 1, errorMessage: null, images: "[]" });
+
+    const login = async (email: string) => {
+      const res = await app.inject({ method: "POST", url: "/admin/auth/login", payload: { email, password: "pw-123456" } });
+      return { authorization: `Bearer ${(res.json() as { token: string }).token}` };
+    };
+    const u1h = await login("u1@x.com");
+    const ah = await login("admin@x.com");
+
+    // 无主 key 只能删自己的记录
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${u1row}`, headers: auth() })).statusCode).toBe(404);
+    // u1 JWT 可删自己的网页记录与名下 key 的记录
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${u1row}`, headers: u1h })).statusCode).toBe(204);
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${u1keyRow}`, headers: u1h })).statusCode).toBe(204);
+    // u1 删不了 u2 的；admin 可以
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${u2row}`, headers: u1h })).statusCode).toBe(404);
+    expect((await app.inject({ method: "DELETE", url: `/v1/history/${u2row}`, headers: ah })).statusCode).toBe(204);
+  });
+});
+
 describe("POST /v1/images/generations records history", () => {
   it("sync ok path writes generation row with localized url image", async () => {
     upstream.get("/x.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));

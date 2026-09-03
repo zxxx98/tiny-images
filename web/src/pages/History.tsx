@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, deleteHistoryItem } from "../api";
 import Lightbox from "./Lightbox";
 
 interface HistoryImage {
@@ -104,6 +104,7 @@ export default function History() {
   const [detail, setDetail] = useState<HistoryItem | null>(null);
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loadedImageSizes, setLoadedImageSizes] = useState<Record<string, ImageDimensions>>({});
   const navigate = useNavigate();
 
@@ -164,6 +165,21 @@ export default function History() {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  const removeRecord = async (item: HistoryItem): Promise<void> => {
+    if (!window.confirm(`确认删除记录 #${item.id}？它包含的图片文件也会一并删除。`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteHistoryItem(item.id);
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+      setDetail(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   useEffect(() => {
@@ -323,6 +339,11 @@ export default function History() {
                       </button>
                     </>
                   )}
+                  <span className="tip" data-tip="删除记录及其图片文件">
+                    <button className="btn small danger" disabled={deleting} onClick={() => void removeRecord(detail)}>
+                      {deleting ? "删除中…" : "删除记录"}
+                    </button>
+                  </span>
                   <button className="btn small danger" onClick={() => setDetail(null)}>
                     关闭
                   </button>
