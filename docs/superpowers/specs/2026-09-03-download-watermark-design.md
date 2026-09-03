@@ -66,7 +66,8 @@ tiny-images 的生成结果以原图形式存储在 `DATA_DIR/generated` 并经 
 ## 前端
 
 - `api.ts`：`WatermarkConfig` / `WatermarkStyle` 类型；`fetchMyWatermark` / `saveMyWatermark`；`downloadImage(url, filename)`——`/files/` URL 走鉴权下载端点取 blob 后 `a[download]`，其余 URL 回退原 anchor 行为。
-- `App.tsx`：menubar「改密码」旁新增「水印」按钮，FormDialog 内为启用开关 + 署名文字。
+- `App.tsx`：menubar 新增「个人设置」导航入口（`/settings`）。
+- `pages/AccountSettings.tsx`：个人设置页，「下载水印」（启用开关 + 署名文字）与「修改密码」两张卡片，水印配置从顶栏弹窗迁移至此。
 - `Playground.tsx` / `History.tsx`：下载改为调用 `downloadImage()`，文件名规则不变。
 - `SettingsTab.tsx`：新增「水印样式」区块（位置下拉、字号、不透明度、颜色、固定前缀）。
 
