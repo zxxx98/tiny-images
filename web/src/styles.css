@@ -1927,3 +1927,10 @@ details textarea {
 .reverse-actions {
   gap: 8px;
 }
+
+/* ---- 个人设置页：多张卡片纵向排列 ---- */
+.account-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
