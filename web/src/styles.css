@@ -896,6 +896,27 @@ textarea:disabled {
   cursor: pointer;
 }
 
+/* ---- 设置页分组框：Win95 蚀刻式 groupbox ---- */
+.settings-group {
+  margin: 0;
+  min-width: 0;
+  padding: 2px 12px 12px;
+  border: 1px solid #808080;
+  box-shadow: 1px 1px 0 #ffffff;
+}
+
+.settings-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* ---- 选项卡 ---- */
 .tabs {
   display: flex;
