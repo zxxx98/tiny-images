@@ -69,6 +69,9 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 | `UPSCALE_MAX_DIMENSION` | `8192` | 放大后宽或高的上限 |
 | `UPSCALE_MAX_OUTPUT_BYTES` | `52428800` | Cloudflare 响应流上限（50 MiB） |
 | `UPSCALE_CONCURRENCY` | `2` | 单进程超分请求并发数，范围 1–16 |
+| `TURNSTILE_SITE_KEY` | 空 | 与 `TURNSTILE_SECRET_KEY` 同时配置时启用登录/注册的 Cloudflare Turnstile 人机验证 |
+| `TURNSTILE_SECRET_KEY` | 空 | Turnstile 站点密钥（siteverify 用，仅存服务端）；两者必须成对配置 |
+| `TURNSTILE_TIMEOUT_MS` | `10000` | siteverify 校验请求超时，范围 1000–60000 ms |
 
 ### 管理设置
 
@@ -77,6 +80,10 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 ### 用户注册
 
 管理员可在「管理后台 → 设置 → 用户注册」开启自助注册（默认关闭）。开启后登录页出现「注册新账号」入口，访客在 `/register` 页面用邮箱和密码自行注册：新账号为普通用户角色，默认每日 30 张生图额度（可在设置页调整，也可在「用户」中按账号修改），注册后立即登录；已注册用户可在页眉「改密码」自行修改密码。关闭开关只影响新注册，已有账号不受影响；接口为 `POST /admin/auth/register`（无需登录，未开启时返回 403），开关状态通过 `GET /admin/auth/register` 查询。
+
+### Cloudflare Turnstile 人机验证
+
+在 Cloudflare 控制台（Turnstile → Add site）创建站点后，将 Site Key 与 Secret Key 通过环境变量 `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY` 同时配置即可启用（只配其中一个会拒绝启动；两个都留空则功能关闭，行为与原来完全一致）。启用后登录（`POST /admin/auth/login`）与注册（`POST /admin/auth/register`）都必须携带 Turnstile token：前端自动加载验证组件，未通过验证时登录/注册按钮保持禁用；服务端先验 token 再校验邮箱密码，token 校验失败返回 403，siteverify 服务不可用时返回 503（宁可拒绝也不放行）。配置是否开启由前端通过 `GET /admin/auth/turnstile` 查询（仅暴露 siteKey）。本地调试可使用 Turnstile 官方测试密钥（Site Key `1x00000000000000000000AA`、Secret Key `1x0000000000000000000000000000000AA`，总是通过）。
 
 ### AI 提示词优化
 
