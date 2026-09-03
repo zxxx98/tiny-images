@@ -60,7 +60,7 @@ function translateSystemPrompt(target: PromptTranslateTarget): string {
   ].join("\n");
 }
 
-function retryDelayMs(response: Response | null, attempt: number): number {
+export function retryDelayMs(response: Response | null, attempt: number): number {
   const retryAfter = response?.headers.get("retry-after");
   if (retryAfter) {
     const seconds = Number(retryAfter);

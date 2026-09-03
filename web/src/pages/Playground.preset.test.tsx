@@ -34,7 +34,7 @@ describe("Playground parameter presets", () => {
       throw new Error(`unexpected API: ${path}`);
     });
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false, promptReverse: false });
     vi.spyOn(apiModule, "fetchFavorites").mockResolvedValue([]);
     Object.defineProperty(window, "scrollTo", { configurable: true, value: vi.fn() });
   });

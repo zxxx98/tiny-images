@@ -47,7 +47,7 @@ describe("Playground prompt favorites", () => {
       throw new Error(`unexpected API: ${path}`);
     });
     vi.spyOn(apiModule, "fetchAnnouncement").mockResolvedValue({ announcement: "", version: 0 });
-    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false });
+    vi.spyOn(apiModule, "fetchFeatures").mockResolvedValue({ upscale: false, promptOptimizer: false, promptReverse: false });
     vi.spyOn(apiModule, "fetchFavorites").mockImplementation(async () => favorites);
     vi.spyOn(apiModule, "addFavorite").mockImplementation(async (prompt: string) => {
       const row = { id: favorites.length + 10, content: prompt, createdAt: 3 };

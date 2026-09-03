@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, type Channel, type ChannelGroup } from "../../api";
+import FormDialog from "../FormDialog";
 
 export default function GroupsTab() {
   const [groups, setGroups] = useState<ChannelGroup[]>([]);
@@ -49,29 +50,37 @@ export default function GroupsTab() {
 
   return (
     <div className="card">
-      {error && (
+      {error && !editing && (
         <div className="error" role="alert">
           {error}
         </div>
       )}
       <p className="muted">分组用于限制普通用户可用的渠道：一个渠道可属于多个分组；用户未配置分组时可使用全部渠道。</p>
-      <button className="btn primary" onClick={() => setEditing({})}>
-        新建分组
-      </button>
+      <span className="tip" data-tip="创建一个渠道分组，用于限制用户可用渠道">
+        <button className="btn primary" onClick={() => setEditing({})}>
+          新建分组
+        </button>
+      </span>
       {editing && (
-        <form className="inline-form" onSubmit={save}>
-          <h3>{editing.id ? "编辑分组" : "新建分组"}</h3>
-          <label htmlFor="g-name">分组名称</label>
-          <input id="g-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
-          <div className="row">
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-            <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
-              取消
-            </button>
-          </div>
-        </form>
+        <FormDialog title={editing.id ? "编辑分组" : "新建分组"} onClose={() => setEditing(null)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <form onSubmit={save}>
+            <label htmlFor="g-name">分组名称</label>
+            <input id="g-name" value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
+            <div className="row">
+              <button className="btn primary" type="submit">
+                保存
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setEditing(null)}>
+                取消
+              </button>
+            </div>
+          </form>
+        </FormDialog>
       )}
       {groups.length === 0 && <p className="muted">还没有分组。</p>}
       {groups.map((g) => (
@@ -82,16 +91,24 @@ export default function GroupsTab() {
               {g.channelIds.length} 个渠道 / 共 {channels.length} 个
             </span>
             <span className="spacer" />
-            <button className="btn small" onClick={() => setEditing(g)}>
-              改名
-            </button>
-            <button className="btn small danger" onClick={() => remove(g.id)}>
-              删除
-            </button>
+            <span className="tip tip-end" data-tip="修改分组名称">
+              <button className="btn small" onClick={() => setEditing(g)}>
+                改名
+              </button>
+            </span>
+            <span className="tip tip-end" data-tip="组内渠道不受影响，但组内用户将失去这些渠道的访问权">
+              <button className="btn small danger" onClick={() => remove(g.id)}>
+                删除
+              </button>
+            </span>
           </div>
           <div className="keys">
             {channels.map((c) => (
-              <span key={c.id} className={`pill ${g.channelIds.includes(c.id) ? "" : "off"}`}>
+              <span
+                key={c.id}
+                className={`pill tip ${g.channelIds.includes(c.id) ? "" : "off"}`}
+                data-tip={g.channelIds.includes(c.id) ? `点击把「${c.name}」移出分组` : `点击把「${c.name}」加入分组`}
+              >
                 <button className="link" onClick={() => toggleMember(g, c.id)}>
                   {g.channelIds.includes(c.id) ? "✓ " : "+ "}
                   {c.name}

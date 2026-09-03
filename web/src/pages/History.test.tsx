@@ -240,3 +240,80 @@ describe("history upscale rows", () => {
     expect(container.querySelector(".history-meta")?.textContent).toContain("尺寸: 320x240");
   });
 });
+
+describe("history delete", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.spyOn(apiModule, "api").mockResolvedValue({ items: [regularItem, upscaleItem] } as never);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  async function openDetail(): Promise<HTMLButtonElement> {
+    await act(async () => {
+      root.render(<MemoryRouter initialEntries={["/history"]}><History /></MemoryRouter>);
+      await flush();
+    });
+    const tile = container.querySelector('.wall-tile[title="a cat"]') as HTMLButtonElement;
+    await act(async () => tile.click());
+    return Array.from(container.querySelectorAll(".history-actions button")).find(
+      (b) => b.textContent?.trim() === "删除记录",
+    ) as HTMLButtonElement;
+  }
+
+  it("deletes the open record after confirm and removes its tile", async () => {
+    const del = vi.spyOn(apiModule, "deleteHistoryItem").mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const delBtn = await openDetail();
+
+    await act(async () => {
+      delBtn.click();
+      await flush();
+    });
+
+    expect(del).toHaveBeenCalledWith(8);
+    expect(container.querySelector(".detail-overlay")).toBeNull();
+    expect(container.querySelector('.wall-tile[title="a cat"]')).toBeNull();
+    expect(container.querySelector('.wall-tile[title="图片超分 · 4×"]')).not.toBeNull();
+  });
+
+  it("keeps the record when the confirm is dismissed", async () => {
+    const del = vi.spyOn(apiModule, "deleteHistoryItem").mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const delBtn = await openDetail();
+
+    await act(async () => {
+      delBtn.click();
+      await flush();
+    });
+
+    expect(del).not.toHaveBeenCalled();
+    expect(container.querySelector(".detail-overlay")).not.toBeNull();
+    expect(container.querySelector('.wall-tile[title="a cat"]')).not.toBeNull();
+  });
+
+  it("surfaces delete failures and keeps the detail open", async () => {
+    vi.spyOn(apiModule, "deleteHistoryItem").mockRejectedValue(new Error("boom"));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const delBtn = await openDetail();
+
+    await act(async () => {
+      delBtn.click();
+      await flush();
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("boom");
+    expect(container.querySelector(".detail-overlay")).not.toBeNull();
+    expect(container.querySelector('.wall-tile[title="a cat"]')).not.toBeNull();
+  });
+});

@@ -9,9 +9,9 @@ function requireText(body: Record<string, unknown>, field: string): string {
 }
 
 // AI 提示词优化配置：三个字段都必须是字符串（可为空 = 未启用）
-function requirePromptOptimizer(value: unknown): { baseUrl: string; apiKey: string; model: string } {
+function requireChatUpstreamSettings(field: string, value: unknown): { baseUrl: string; apiKey: string; model: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw httpError(400, "'promptOptimizer' must be an object");
+    throw httpError(400, `'${field}' must be an object`);
   }
   const source = value as Record<string, unknown>;
   return {
@@ -19,6 +19,25 @@ function requirePromptOptimizer(value: unknown): { baseUrl: string; apiKey: stri
     apiKey: requireText(source, "apiKey"),
     model: requireText(source, "model"),
   };
+}
+
+const requirePromptOptimizer = (value: unknown): { baseUrl: string; apiKey: string; model: string } =>
+  requireChatUpstreamSettings("promptOptimizer", value);
+
+const requirePromptReverse = (value: unknown): { baseUrl: string; apiKey: string; model: string } =>
+  requireChatUpstreamSettings("promptReverse", value);
+
+// 用户注册配置：enabled 为布尔，dailyQuota 为正整数（新注册账号的默认每日额度）
+function requireRegistration(value: unknown): { enabled: boolean; dailyQuota: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw httpError(400, "'registration' must be an object");
+  }
+  const source = value as Record<string, unknown>;
+  if (typeof source.enabled !== "boolean") throw httpError(400, "'registration.enabled' must be a boolean");
+  if (typeof source.dailyQuota !== "number" || !Number.isInteger(source.dailyQuota) || source.dailyQuota <= 0) {
+    throw httpError(400, "'registration.dailyQuota' must be a positive integer");
+  }
+  return { enabled: source.enabled, dailyQuota: source.dailyQuota };
 }
 
 export function registerSettings(ctx: AppContext): void {
@@ -32,6 +51,8 @@ export function registerSettings(ctx: AppContext): void {
       ...(body.promptOptimizer === undefined
         ? {}
         : { promptOptimizer: requirePromptOptimizer(body.promptOptimizer) }),
+      ...(body.promptReverse === undefined ? {} : { promptReverse: requirePromptReverse(body.promptReverse) }),
+      ...(body.registration === undefined ? {} : { registration: requireRegistration(body.registration) }),
     });
   });
 

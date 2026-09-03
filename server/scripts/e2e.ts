@@ -160,6 +160,36 @@ console.log("[e2e] history ok");
 const logs = await (await fetch(`${base}/admin/logs`, { headers: admin })).json();
 console.log("[e2e] logs:", logs.length, "entries, last status:", logs[0]?.status);
 
+// ---- 用户注册 ----
+const regDisabled = await fetch(`${base}/admin/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "self@x.com", password: "self-pass" }) });
+console.log("[e2e] register while disabled:", regDisabled.status);
+console.assert(regDisabled.status === 403, "register should be disabled by default");
+await fetch(`${base}/admin/settings`, {
+  method: "PUT",
+  headers: admin,
+  body: JSON.stringify({ globalPrompt: "", announcement: "", registration: { enabled: true, dailyQuota: 30 } }),
+});
+const regStatus = await (await fetch(`${base}/admin/auth/register`)).json();
+console.assert(regStatus.enabled === true, "register status should be enabled");
+const reg = await fetch(`${base}/admin/auth/register`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email: "self@x.com", password: "self-pass" }),
+});
+const regBody = (await reg.json()) as { token: string; role: string };
+console.log("[e2e] register:", reg.status, "role:", regBody.role);
+console.assert(reg.status === 201 && regBody.role === "user", "register failed");
+const regMe = (await (await fetch(`${base}/admin/auth/me`, { headers: { authorization: `Bearer ${regBody.token}` } })).json()) as { quotaTotal: number | null; quotaRemaining: number | null };
+console.log("[e2e] registered user quota:", regMe.quotaRemaining, "/", regMe.quotaTotal);
+console.assert(regMe.quotaTotal === 30 && regMe.quotaRemaining === 30, "registered user should default to 30/day");
+const regPw = await fetch(`${base}/admin/auth/password`, {
+  method: "PUT",
+  headers: { "content-type": "application/json", authorization: `Bearer ${regBody.token}` },
+  body: JSON.stringify({ oldPassword: "self-pass", newPassword: "self-pass-2" }),
+});
+console.log("[e2e] registered user change password:", regPw.status);
+console.assert(regPw.status === 204, "registered user should be able to change own password");
+
 await app.close();
 await upstream.close();
 repo.close();

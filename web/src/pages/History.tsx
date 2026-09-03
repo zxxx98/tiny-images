@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, deleteHistoryItem } from "../api";
 import Lightbox from "./Lightbox";
 
 interface HistoryImage {
@@ -104,6 +104,7 @@ export default function History() {
   const [detail, setDetail] = useState<HistoryItem | null>(null);
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loadedImageSizes, setLoadedImageSizes] = useState<Record<string, ImageDimensions>>({});
   const navigate = useNavigate();
 
@@ -156,10 +157,29 @@ export default function History() {
     navigate("/", { state: { upscaleImageUrl: url } });
   };
 
+  const reverseImage = (url: string): void => {
+    navigate("/", { state: { reverseImageUrl: url } });
+  };
+
   const copyPrompt = async (item: HistoryItem): Promise<void> => {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  const removeRecord = async (item: HistoryItem): Promise<void> => {
+    if (!window.confirm(`确认删除记录 #${item.id}？它包含的图片文件也会一并删除。`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteHistoryItem(item.id);
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+      setDetail(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   useEffect(() => {
@@ -246,25 +266,29 @@ export default function History() {
               <div className="detail-gallery">
                 {detail.images.map((img, i) => (
                   <figure key={i} className="shot">
-                    <img
-                      src={img.url}
-                      alt={`历史图片 ${i + 1}`}
-                      loading="lazy"
-                      title="点击放大查看"
-                      onClick={(e) => {
-                        // 阻止冒泡到详情遮罩，避免点击图片时连带关闭详情。
-                        e.stopPropagation();
-                        setZoomSrc(img.url);
-                      }}
-                      onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
-                      onError={markExpired}
-                    />
+                    <span className="tip tip-block" data-tip="点击放大查看">
+                      <img
+                        src={img.url}
+                        alt={`历史图片 ${i + 1}`}
+                        loading="lazy"
+                        onClick={(e) => {
+                          // 阻止冒泡到详情遮罩，避免点击图片时连带关闭详情。
+                          e.stopPropagation();
+                          setZoomSrc(img.url);
+                        }}
+                        onLoad={(e) => rememberImageSize(imageSizeKey(detail.id, i), e)}
+                        onError={markExpired}
+                      />
+                    </span>
                     <div className="shot-actions">
                       <button className="btn small" onClick={() => editImage(img.url)}>
                         编辑此图
                       </button>
                       <button className="btn small" onClick={() => upscaleImage(img.url)}>
                         超分
+                      </button>
+                      <button className="btn small" onClick={() => reverseImage(img.url)}>
+                        反推
                       </button>
                       <a className="btn small" href={img.url} download={`tiny-images-${detail.id}-${i + 1}.png`}>
                         下载
@@ -315,6 +339,11 @@ export default function History() {
                       </button>
                     </>
                   )}
+                  <span className="tip" data-tip="删除记录及其图片文件">
+                    <button className="btn small danger" disabled={deleting} onClick={() => void removeRecord(detail)}>
+                      {deleting ? "删除中…" : "删除记录"}
+                    </button>
+                  </span>
                   <button className="btn small danger" onClick={() => setDetail(null)}>
                     关闭
                   </button>

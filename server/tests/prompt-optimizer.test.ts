@@ -200,9 +200,10 @@ describe("POST /v1/prompt/optimize", () => {
   });
 
   it("exposes promptOptimizer availability through /v1/features", async () => {
-    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: false });
+    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: false, promptReverse: false });
     await configureOptimizer();
-    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: true });
+    // 反推上游未单独配置时回退到优化接口，因此同时变为可用
+    expect((await app.inject({ url: "/v1/features" })).json()).toEqual({ upscale: false, promptOptimizer: true, promptReverse: true });
   });
 });
 

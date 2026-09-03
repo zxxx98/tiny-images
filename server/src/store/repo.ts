@@ -128,11 +128,24 @@ export interface PromptOptimizerSettings {
   model: string;
 }
 
+// 用户自助注册：enabled 控制注册入口开关，dailyQuota 为新注册账号的默认每日额度
+export interface RegistrationSettings {
+  enabled: boolean;
+  dailyQuota: number;
+}
+
+export const DEFAULT_REGISTRATION_DAILY_QUOTA = 30;
+
+// 图片反推上游与提示词优化同构，只是支持可选的独立配置
+export type PromptReverseSettings = PromptOptimizerSettings;
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
   promptOptimizer: PromptOptimizerSettings;
+  promptReverse: PromptReverseSettings;
+  registration: RegistrationSettings;
 }
 
 export class ConflictError extends Error {
@@ -166,6 +179,11 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
 }
 
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
 export class Repo {
   private db: DatabaseSync;
 
@@ -194,6 +212,15 @@ export class Repo {
         apiKey: values.get("prompt_optimizer_api_key") ?? "",
         model: values.get("prompt_optimizer_model") ?? "",
       },
+      promptReverse: {
+        baseUrl: values.get("prompt_reverse_base_url") ?? "",
+        apiKey: values.get("prompt_reverse_api_key") ?? "",
+        model: values.get("prompt_reverse_model") ?? "",
+      },
+      registration: {
+        enabled: values.get("registration_enabled") === "1",
+        dailyQuota: parsePositiveInt(values.get("registration_daily_quota"), DEFAULT_REGISTRATION_DAILY_QUOTA),
+      },
     };
   }
 
@@ -201,11 +228,15 @@ export class Repo {
     globalPrompt: string;
     announcement: string;
     promptOptimizer?: PromptOptimizerSettings;
+    promptReverse?: PromptReverseSettings;
+    registration?: RegistrationSettings;
   }): AppSettings {
     const current = this.getAppSettings();
     const announcementVersion =
       current.announcement === input.announcement ? current.announcementVersion : current.announcementVersion + 1;
     const optimizer = input.promptOptimizer ?? current.promptOptimizer;
+    const reverse = input.promptReverse ?? current.promptReverse;
+    const registration = input.registration ?? current.registration;
     const put = this.db.prepare(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
@@ -217,6 +248,11 @@ export class Repo {
       put.run("prompt_optimizer_base_url", optimizer.baseUrl);
       put.run("prompt_optimizer_api_key", optimizer.apiKey);
       put.run("prompt_optimizer_model", optimizer.model);
+      put.run("prompt_reverse_base_url", reverse.baseUrl);
+      put.run("prompt_reverse_api_key", reverse.apiKey);
+      put.run("prompt_reverse_model", reverse.model);
+      put.run("registration_enabled", registration.enabled ? "1" : "0");
+      put.run("registration_daily_quota", String(registration.dailyQuota));
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -637,6 +673,26 @@ export class Repo {
         .all(viewer.apiKeyId, viewer.apiKeyId, before, before, limit) as Record<string, unknown>[];
     }
     return rows.map((r) => this.toGeneration(r));
+  }
+
+  // 删除一条生成历史（按 listGenerations 的可见性规则鉴权），返回被删行供调用方清理图片文件；不存在或不可见返回 null
+  deleteGeneration(viewer: GenerationViewer, id: number): GenerationRow | null {
+    const row = this.db.prepare("SELECT * FROM generations WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const gen = this.toGeneration(row);
+    if (!this.generationVisibleTo(viewer, gen)) return null;
+    this.db.prepare("DELETE FROM generations WHERE id = ?").run(id);
+    return gen;
+  }
+
+  private generationVisibleTo(viewer: GenerationViewer, row: GenerationRow): boolean {
+    if (viewer.admin) return true;
+    if (viewer.userId !== null) {
+      if (row.userId === viewer.userId) return true;
+      if (row.apiKeyId === null) return false;
+      return !!this.db.prepare("SELECT 1 FROM api_keys WHERE id = ? AND user_id = ?").get(row.apiKeyId, viewer.userId);
+    }
+    return viewer.apiKeyId !== null && row.apiKeyId === viewer.apiKeyId;
   }
 
   failPendingGenerations(message: string): number {

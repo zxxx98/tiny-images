@@ -564,8 +564,53 @@ textarea:disabled {
   box-shadow: var(--bevel-out-shadow);
 }
 
-.btn-tooltip {
-  display: inline-flex;
+/* ---- Win95 风格 tooltip：任意元素加 .tip + data-tip 即可；禁用按钮需包一层 span ---- */
+.tip {
+  position: relative;
+}
+
+.tip::after {
+  content: attr(data-tip);
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+  background: #ffffe1;
+  color: #000;
+  border: 1px solid #000;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  width: max-content;
+  max-width: 240px;
+  z-index: 300;
+  pointer-events: none;
+}
+
+.tip[data-tip]:not([data-tip=""]):hover::after,
+.tip[data-tip]:not([data-tip=""]):focus-within::after {
+  display: block;
+}
+
+/* 靠近右/左边缘时改对齐方向，避免气泡溢出窗口 */
+.tip.tip-end::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.tip.tip-start::after {
+  left: 0;
+  transform: none;
+}
+
+/* 包裹块级元素（如图片）时的 tooltip 载体 */
+.tip-block {
+  display: block;
 }
 
 .menubar .btn.small {
@@ -805,6 +850,44 @@ textarea:disabled {
   margin-top: 0;
 }
 
+/* ---- 注册页 ---- */
+.register-alt {
+  margin: 0;
+  text-align: center;
+}
+
+.register-alt a {
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.register-closed-tip {
+  margin: 0;
+  text-align: center;
+}
+
+.register-link {
+  text-align: center;
+}
+
+/* ---- 设置页复选框行 ---- */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.check-row .check-label {
+  margin-top: 0;
+  cursor: pointer;
+}
+
 /* ---- 选项卡 ---- */
 .tabs {
   display: flex;
@@ -1002,6 +1085,37 @@ tbody tr:nth-child(even) {
 .inline-form select,
 .inline-form textarea {
   background: #ffffff;
+}
+
+/* ---- 弹窗表单（FormDialog）---- */
+.form-window {
+  width: min(560px, 100%);
+}
+
+.form-dialog-body {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-dialog-body form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-dialog-body label {
+  margin-top: 0;
+}
+
+/* ---- 表格分页 ---- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 details summary {
@@ -1635,4 +1749,78 @@ details textarea {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+/* ---- 图片反推 ---- */
+.reverse-preview {
+  max-width: 180px;
+}
+
+.reverse-preview img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
+.reverse-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.reverse-history-tile {
+  padding: 0;
+  border: 1px solid #888;
+  background: #fff;
+  cursor: pointer;
+}
+
+.reverse-history-tile img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+}
+
+.reverse-history-tile:hover {
+  outline: 2px solid var(--navy);
+}
+
+.reverse-history-close {
+  margin-left: auto;
+}
+
+/* 反推中的加载瓦片：复用生成占位的分段进度条，但不强制 1:1 */
+.reverse-loading {
+  aspect-ratio: auto;
+  min-height: 200px;
+}
+
+.reverse-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reverse-result-text {
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.reverse-actions {
+  gap: 8px;
 }

@@ -1,13 +1,27 @@
-import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ApiError, clearToken, loginRequest, setRole, setToken } from "../api";
+import { FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ApiError, clearToken, fetchRegistrationEnabled, loginRequest, setRole, setToken } from "../api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const navigate = useNavigate();
+
+  // 探测注册入口开关；失败按未开启处理
+  useEffect(() => {
+    let alive = true;
+    fetchRegistrationEnabled()
+      .then((enabled) => {
+        if (alive) setRegistrationEnabled(enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,6 +65,11 @@ export default function Login() {
         <button className="btn primary" type="submit" disabled={!email.trim() || !password || submitting}>
           {submitting ? "登录中…" : "登录"}
         </button>
+        {registrationEnabled && (
+          <p className="muted register-alt">
+            没有账号？<Link to="/register">注册新账号</Link>
+          </p>
+        )}
       </form>
     </div>
   );

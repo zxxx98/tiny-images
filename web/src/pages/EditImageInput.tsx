@@ -19,7 +19,7 @@ export default function EditImageInput({ files, previews, onChange }: EditImageI
       {previews.length > 0 && (
         <div className="edit-previews">
           {files.map((file, index) => (
-            <figure key={`${file.name}-${index}`} className="edit-preview" title={file.name}>
+            <figure key={`${file.name}-${index}`} className="edit-preview tip" data-tip={file.name}>
               <img src={previews[index]} alt={`原图 ${index + 1}：${file.name}`} />
               <figcaption className="muted">{file.name}</figcaption>
             </figure>

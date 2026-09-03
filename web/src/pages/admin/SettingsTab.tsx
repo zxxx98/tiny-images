@@ -1,12 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
-import { fetchSettings, saveSettings, type PromptOptimizerSettings } from "../../api";
+import { fetchSettings, saveSettings, type PromptOptimizerSettings, type RegistrationSettings } from "../../api";
 
 const EMPTY_OPTIMIZER: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
+const DEFAULT_REGISTRATION: RegistrationSettings = { enabled: false, dailyQuota: 30 };
+const EMPTY_REVERSE: PromptOptimizerSettings = { baseUrl: "", apiKey: "", model: "" };
 
 export default function SettingsTab() {
   const [globalPrompt, setGlobalPrompt] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [optimizer, setOptimizer] = useState<PromptOptimizerSettings>(EMPTY_OPTIMIZER);
+  const [registration, setRegistration] = useState<RegistrationSettings>(DEFAULT_REGISTRATION);
+  const [quotaText, setQuotaText] = useState(String(DEFAULT_REGISTRATION.dailyQuota));
+  const [reverse, setReverse] = useState<PromptOptimizerSettings>(EMPTY_REVERSE);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,6 +27,10 @@ export default function SettingsTab() {
         setGlobalPrompt(settings.globalPrompt);
         setAnnouncement(settings.announcement);
         setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
+        const reg = settings.registration ?? DEFAULT_REGISTRATION;
+        setRegistration(reg);
+        setQuotaText(String(reg.dailyQuota));
+        setReverse(settings.promptReverse ?? EMPTY_REVERSE);
         setLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -37,14 +46,24 @@ export default function SettingsTab() {
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (!loaded) return;
+    const dailyQuota = Number(quotaText);
+    if (!Number.isInteger(dailyQuota) || dailyQuota <= 0) {
+      setError("注册用户每日额度必须是正整数");
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);
     try {
-      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer });
+      const next: RegistrationSettings = { ...registration, dailyQuota };
+      const settings = await saveSettings({ globalPrompt, announcement, promptOptimizer: optimizer, promptReverse: reverse, registration: next });
       setGlobalPrompt(settings.globalPrompt);
       setAnnouncement(settings.announcement);
       setOptimizer(settings.promptOptimizer ?? EMPTY_OPTIMIZER);
+      setReverse(settings.promptReverse ?? EMPTY_REVERSE);
+      const reg = settings.registration ?? next;
+      setRegistration(reg);
+      setQuotaText(String(reg.dailyQuota));
       setMessage("设置已保存");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -118,6 +137,63 @@ export default function SettingsTab() {
           spellCheck={false}
         />
         <p className="muted">配置后 Playground 的 Prompt 输入框会出现「AI 优化」按钮；接口地址与模型任一留空则不启用。</p>
+
+        <h3>AI 图片反推</h3>
+        <label htmlFor="settings-reverse-base-url">反推接口地址（OpenAI 兼容 chat 接口，需支持视觉）</label>
+        <input
+          id="settings-reverse-base-url"
+          type="text"
+          value={reverse.baseUrl}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, baseUrl: event.target.value }))}
+          placeholder="https://api.openai.com/v1"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-reverse-api-key">API Key</label>
+        <input
+          id="settings-reverse-api-key"
+          type="password"
+          value={reverse.apiKey}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, apiKey: event.target.value }))}
+          placeholder="sk-…"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <label htmlFor="settings-reverse-model">模型</label>
+        <input
+          id="settings-reverse-model"
+          type="text"
+          value={reverse.model}
+          disabled={!loaded || saving}
+          onChange={(event) => setReverse((cur) => ({ ...cur, model: event.target.value }))}
+          placeholder="gpt-4o-mini / qwen-vl …"
+          spellCheck={false}
+        />
+        <p className="muted">配置后 Playground 会出现「图片反推」模式，由视觉模型反推图片提示词；留空时使用上方「AI 提示词优化」的接口配置。</p>
+        <h3>用户注册</h3>
+        <div className="check-row">
+          <input
+            id="settings-registration-enabled"
+            type="checkbox"
+            checked={registration.enabled}
+            disabled={!loaded || saving}
+            onChange={(event) => setRegistration((cur) => ({ ...cur, enabled: event.target.checked }))}
+          />
+          <label htmlFor="settings-registration-enabled" className="check-label">启用用户注册</label>
+        </div>
+        <label htmlFor="settings-registration-daily-quota">注册用户每日额度（张）</label>
+        <input
+          id="settings-registration-daily-quota"
+          type="number"
+          min={1}
+          step={1}
+          value={quotaText}
+          disabled={!loaded || saving}
+          onChange={(event) => setQuotaText(event.target.value)}
+          spellCheck={false}
+        />
+        <p className="muted">启用后登录页出现「注册」入口，访客可用邮箱和密码自助注册，新账号默认每天可生成该数量的图片；关闭只影响新注册，已有账号不受影响。</p>
 
         <button className="btn primary" type="submit" disabled={!loaded || saving}>
           {saving ? "保存中…" : "保存设置"}

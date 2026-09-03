@@ -72,6 +72,7 @@ describe("App model status route", () => {
   it("guards the status page when no token is present", async () => {
     vi.stubGlobal("localStorage", storage("", null));
     vi.spyOn(apiModule, "fetchSetupNeeded").mockResolvedValue(false);
+    vi.spyOn(apiModule, "fetchRegistrationEnabled").mockResolvedValue(false);
 
     await act(async () => {
       root.render(<MemoryRouter initialEntries={["/status"]}><App /></MemoryRouter>);
@@ -86,6 +87,7 @@ describe("App model status route", () => {
   it("shows the auto-generated version in the footer", async () => {
     vi.stubGlobal("localStorage", storage("", null));
     vi.spyOn(apiModule, "fetchSetupNeeded").mockResolvedValue(false);
+    vi.spyOn(apiModule, "fetchRegistrationEnabled").mockResolvedValue(false);
 
     await act(async () => {
       root.render(<MemoryRouter initialEntries={["/"]}><App /></MemoryRouter>);
@@ -94,6 +96,6 @@ describe("App model status route", () => {
 
     const badge = container.querySelector<HTMLElement>(".version-badge");
     expect(badge?.textContent).toBe(APP_VERSION);
-    expect(badge?.title).toBe(`Commit ${GIT_HASH}`);
+    expect(badge?.getAttribute("data-tip")).toBe(`Commit ${GIT_HASH}`);
   });
 });

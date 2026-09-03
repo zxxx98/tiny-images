@@ -112,6 +112,8 @@ describe("application settings", () => {
       announcement: "",
       announcementVersion: 0,
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      promptReverse: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
   });
 
@@ -121,6 +123,8 @@ describe("application settings", () => {
       announcement: "hello",
       announcementVersion: 1,
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      promptReverse: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "hello" }).announcementVersion).toBe(1);
     expect(repo.updateAppSettings({ globalPrompt: "new style", announcement: "changed" }).announcementVersion).toBe(2);
@@ -135,6 +139,8 @@ describe("application settings", () => {
       announcement: "persistent notice",
       announcementVersion: 1,
       promptOptimizer: { baseUrl: "", apiKey: "", model: "" },
+      promptReverse: { baseUrl: "", apiKey: "", model: "" },
+      registration: { enabled: false, dailyQuota: 30 },
     });
   });
 });

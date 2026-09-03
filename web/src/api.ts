@@ -26,6 +26,25 @@ export async function loginRequest(email: string, password: string): Promise<{ t
   return { token: parsed.token, role: parsed.role!, email: parsed.email! };
 }
 
+// 注册入口开关（管理员在设置页控制）；未开启时登录页不展示注册入口
+export async function fetchRegistrationEnabled(): Promise<boolean> {
+  const res = await fetch("/admin/auth/register");
+  const parsed = (await res.json().catch(() => ({}))) as { enabled?: boolean };
+  return !!parsed.enabled;
+}
+
+// 用户自助注册：成功即视为已登录（服务端直接返回 token）
+export async function registerRequest(email: string, password: string): Promise<{ token: string; role: "admin" | "user"; email: string }> {
+  const res = await fetch("/admin/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { token?: string; role?: "admin" | "user"; email?: string; error?: { message?: string } };
+  if (!res.ok || !parsed.token) throw new ApiError(res.status, parsed as { error?: { message?: string } });
+  return { token: parsed.token, role: parsed.role!, email: parsed.email! };
+}
+
 export interface Me {
   role: "admin" | "user";
   email: string;
@@ -238,17 +257,31 @@ export interface PromptOptimizerSettings {
   model: string;
 }
 
+export type PromptReverseSettings = PromptOptimizerSettings;
+
+export interface RegistrationSettings {
+  enabled: boolean;
+  dailyQuota: number;
+}
+
 export interface AppSettings {
   globalPrompt: string;
   announcement: string;
   announcementVersion: number;
   promptOptimizer: PromptOptimizerSettings;
+  promptReverse: PromptReverseSettings;
+  registration: RegistrationSettings;
 }
 
 export const fetchSettings = (): Promise<AppSettings> => api<AppSettings>("/admin/settings");
 
-export const saveSettings = (input: Pick<AppSettings, "globalPrompt" | "announcement"> & { promptOptimizer?: PromptOptimizerSettings }): Promise<AppSettings> =>
-  api<AppSettings>("/admin/settings", { method: "PUT", body: input });
+export const saveSettings = (
+  input: Pick<AppSettings, "globalPrompt" | "announcement"> & {
+    promptOptimizer?: PromptOptimizerSettings;
+    promptReverse?: PromptReverseSettings;
+    registration?: RegistrationSettings;
+  },
+): Promise<AppSettings> => api<AppSettings>("/admin/settings", { method: "PUT", body: input });
 
 export interface Announcement {
   announcement: string;
@@ -260,6 +293,7 @@ export const fetchAnnouncement = (): Promise<Announcement> => api<Announcement>(
 export interface Features {
   upscale: boolean;
   promptOptimizer: boolean;
+  promptReverse: boolean;
 }
 
 export const fetchFeatures = (): Promise<Features> => api<Features>("/v1/features");
@@ -286,6 +320,12 @@ export const addFavorite = (prompt: string): Promise<PromptFavorite> =>
   api<PromptFavorite>("/v1/prompt-favorites", { method: "POST", body: { prompt } });
 
 export const deleteFavorite = (id: number): Promise<void> => api<void>(`/v1/prompt-favorites/${id}`, { method: "DELETE" });
+
+// 图片反推：image 为 data URL（本地文件或历史图片转 base64），返回反推出的提示词
+export type ReverseStyle = "concise" | "detailed" | "cinematic";
+
+export const reverseImagePrompt = (image: string, style: ReverseStyle): Promise<{ prompt: string }> =>
+  api<{ prompt: string }>("/v1/prompt/reverse", { method: "POST", body: { image, style } });
 
 // ---- 生成 job ----
 
@@ -340,3 +380,6 @@ export function createUpscaleJob(form: FormData): Promise<{ jobId: string }> {
 export function fetchJob(id: string): Promise<JobStatus> {
   return api<JobStatus>(`/v1/images/jobs/${id}`);
 }
+
+// 删除一条生成历史（服务端会连带删除其图片文件）
+export const deleteHistoryItem = (id: number): Promise<void> => api<void>(`/v1/history/${id}`, { method: "DELETE" });
