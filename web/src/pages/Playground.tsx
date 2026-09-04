@@ -30,7 +30,9 @@ import AnnouncementDialog, {
 } from "./AnnouncementDialog";
 import EditImageInput from "./EditImageInput";
 import Lightbox from "./Lightbox";
+import TemplateLibrary from "./TemplateLibrary";
 import { createPreset, loadPresets, newPresetId, PRESET_NAME_MAX, savePresets, type Preset } from "./presets";
+import type { OfficialTemplate } from "../api";
 
 interface ModelsResponse {
   data: { id: string; supportsImageToImage?: boolean }[];
@@ -219,6 +221,7 @@ export default function Playground() {
   const [sharedShots, setSharedShots] = useState<Record<number, boolean>>({});
   const [sharingShot, setSharingShot] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activityRef = useRef(0);
   const location = useLocation();
@@ -818,6 +821,27 @@ export default function Playground() {
     setActivePresetId("");
   };
 
+  // 选用模板：文生图模板回填 Prompt；图生图模板回填 Prompt 并切到编辑模式（再上传自己的原图）。
+  // 官方模板人人可用不可删，自己录入的模板可在弹窗里删除
+  const applyTemplate = (template: OfficialTemplate): void => {
+    setPrompt(template.prompt);
+    if (undoPrompt !== null) setUndoPrompt(null);
+    setLibraryOpen(false);
+    setError(null);
+    if (template.type === "image2image") {
+      const editableId = pickEditableModelId(models, model);
+      if (modelsLoaded && !editableId) {
+        setError(EDIT_NOT_SUPPORTED_MESSAGE);
+        return;
+      }
+      if (editableId && editableId !== model) setModel(editableId);
+      setMode("edit");
+    } else {
+      setMode("generate");
+    }
+    window.scrollTo({ top: 0 });
+  };
+
   const acknowledgeAnnouncement = (): void => {
     if (!announcement) return;
     persistAnnouncementAcknowledgement(announcement);
@@ -1004,6 +1028,15 @@ export default function Playground() {
               <div className="prompt-head">
                 <label htmlFor="pg-prompt">Prompt（Ctrl+Enter 生成）</label>
                 <span className="prompt-actions">
+                  <button
+                    className="btn small tip"
+                    type="button"
+                    data-tip="打开模板库，选用文生图 / 图生图模板，或把当前 Prompt 录入为自己的模板"
+                    onClick={() => setLibraryOpen(true)}
+                    disabled={running}
+                  >
+                    模板库
+                  </button>
                   {undoPrompt !== null && (
                     <button className="btn small tip" type="button" data-tip="回到 AI 优化/翻译前的提示词" onClick={undoEdit} disabled={optimizing || translating}>
                       撤销
@@ -1301,6 +1334,15 @@ export default function Playground() {
         </div>
       </div>
       {zoomSrc && <Lightbox src={zoomSrc} alt="生成结果" onClose={() => setZoomSrc(null)} />}
+      {libraryOpen && (
+        <TemplateLibrary
+          onClose={() => setLibraryOpen(false)}
+          onSelect={applyTemplate}
+          initialPrompt={prompt}
+          // 已生成的图连图录入，没生成就只录文字：生成结果为 after/示例，编辑模式的原图为 before
+          capture={{ generated: images[0] ?? null, source: mode === "edit" ? (editPreviews[0] ?? null) : null }}
+        />
+      )}
     </>
   );
 }

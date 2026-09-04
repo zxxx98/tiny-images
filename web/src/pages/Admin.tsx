@@ -6,8 +6,9 @@ import { Pager, usePager } from "./Pager";
 import GroupsTab from "./admin/GroupsTab";
 import UsersTab from "./admin/UsersTab";
 import SettingsTab from "./admin/SettingsTab";
+import TemplatesTab from "./admin/TemplatesTab";
 
-type Tab = "channels" | "models" | "keys" | "logs" | "groups" | "users" | "settings";
+type Tab = "channels" | "models" | "keys" | "logs" | "groups" | "users" | "templates" | "settings";
 
 const TABS: [Tab, string][] = [
   ["channels", "渠道"],
@@ -15,6 +16,7 @@ const TABS: [Tab, string][] = [
   ["models", "模型映射"],
   ["keys", "API Keys"],
   ["users", "用户"],
+  ["templates", "模板库"],
   ["logs", "请求日志"],
   ["settings", "设置"],
 ];
@@ -46,6 +48,7 @@ export default function Admin() {
         {tab === "models" && <ModelsTab />}
         {tab === "keys" && <ApiKeysTab />}
         {tab === "users" && <UsersTab />}
+        {tab === "templates" && <TemplatesTab />}
         {tab === "logs" && <LogsTab />}
         {tab === "settings" && <SettingsTab />}
       </div>

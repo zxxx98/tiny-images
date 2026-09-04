@@ -465,6 +465,74 @@ export const fetchPlaza = (opts: { before?: number; mine?: boolean } = {}): Prom
 // 取消分享（仅本人或管理员；服务端会连带删除广场图片文件）
 export const deletePlazaShare = (id: number): Promise<void> => api<void>(`/v1/plaza/${id}`, { method: "DELETE" });
 
+// ---- 官方模板库 ----
+
+// 文生图（exampleImage 为生成示例）与图生图（exampleBefore/After 为生成前后示例）
+export type TemplateType = "text2image" | "image2image";
+
+// mine=true 表示当前登录用户自己录入的模板（可删除）；官方模板只读
+export interface OfficialTemplate {
+  id: number;
+  type: TemplateType;
+  name: string;
+  prompt: string;
+  exampleImage: string | null;
+  exampleBefore: string | null;
+  exampleAfter: string | null;
+  mine: boolean;
+}
+
+export interface AdminTemplate extends OfficialTemplate {
+  ownerUserId: number | null;
+  ownerEmail: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// 前台模板库：官方模板 + 本人录入的模板；官方只读，本人模板可删除
+export const fetchTemplates = (): Promise<OfficialTemplate[]> => api<OfficialTemplate[]>("/v1/templates");
+
+export const fetchAdminTemplates = (): Promise<AdminTemplate[]> => api<AdminTemplate[]>("/admin/templates");
+
+// 用户录入自己的模板：type/name/prompt + 可选示例图（已在 Playground 生成时一并录入）
+export const createMyTemplate = (form: FormData): Promise<OfficialTemplate> =>
+  apiMultipart<OfficialTemplate>("/v1/templates", form, "POST");
+
+export const deleteMyTemplate = (id: number): Promise<void> => api<void>(`/v1/templates/${id}`, { method: "DELETE" });
+
+// multipart 上传（新建/编辑模板时可携带示例图文件）
+export async function apiMultipart<T>(path: string, form: FormData, method = "POST"): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { authorization: `Bearer ${getToken()}` },
+    body: form,
+  });
+  const parsed = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+  if (res.status === 401 && window.location.pathname !== "/login") {
+    clearToken();
+    window.location.assign("/login");
+  }
+  if (!res.ok) throw new ApiError(res.status, parsed);
+  if (res.status === 204) return undefined as T;
+  return parsed as T;
+}
+
+export const saveTemplate = (id: number | null, form: FormData): Promise<AdminTemplate> =>
+  apiMultipart<AdminTemplate>(id ? `/admin/templates/${id}` : "/admin/templates", form, id ? "PUT" : "POST");
+
+export const deleteTemplate = (id: number): Promise<void> => api<void>(`/admin/templates/${id}`, { method: "DELETE" });
+
+// 把一张图片 URL（生成结果/本地 blob 预览）转成上传用的 File；模板录入时连图一起提交
+export async function fetchImageAsFile(url: string, name: string): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const ext = blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : "png";
+  return new File([blob], `${name}.${ext}`, { type: blob.type || "image/png" });
+}
+
 // ---- 下载水印 ----
 
 export const fetchMyWatermark = (): Promise<WatermarkConfig> => api<WatermarkConfig>("/v1/watermark");

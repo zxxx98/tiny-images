@@ -1934,3 +1934,173 @@ details textarea {
   flex-direction: column;
   gap: 16px;
 }
+
+/* ---- 官方模板库 ---- */
+
+/* 前台模板库弹窗：分栏卡片网格 */
+.template-library-tabs {
+  margin-bottom: 2px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.template-card {
+  margin: 0;
+  padding: 8px;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.template-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.template-card-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-example {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 图生图：生成前 → 生成后 对比 */
+.template-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-pair-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.template-pair-slot img,
+.template-example > img {
+  display: block;
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border: 1px solid #888;
+  background: #fff;
+}
+
+.template-pair-arrow {
+  flex-shrink: 0;
+  font-weight: bold;
+  color: var(--navy);
+}
+
+.template-example-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 110px;
+  border: 1px dashed #999;
+  font-size: 12px;
+}
+
+.template-example-label {
+  font-size: 11px;
+}
+
+.template-prompt {
+  margin: 0;
+  font-size: 12px;
+  color: #333;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 3em;
+}
+
+.template-card-actions {
+  margin-top: auto;
+}
+
+.template-library-foot {
+  margin: 0;
+}
+
+/* 后台模板列表：示例缩略图与内容截断 */
+.template-thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border: 1px solid #888;
+  background: #fff;
+}
+
+.template-pair-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.template-admin-prompt {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* 后台模板编辑器：示例图上传/生成区 */
+.template-example-edit {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: #ffffff;
+  border: 2px solid;
+  border-color: var(--bevel-in-border);
+  box-shadow: var(--bevel-in-shadow);
+}
+
+.template-example-edit-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.template-example-edit .template-pair-slot img,
+.template-example-edit .template-example > img {
+  width: 140px;
+  height: 140px;
+}
+
+.template-example-edit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}

@@ -158,6 +158,26 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS plaza_shares_cursor ON plaza_shares(id DESC);
   CREATE UNIQUE INDEX IF NOT EXISTS plaza_shares_user_file ON plaza_shares(user_id, file);
   `,
+  `
+  -- 官方模板库：文生图（example_image 生成示例）与图生图（example_before/after 前后示例）
+  CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK (type IN ('text2image','image2image')),
+    name TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    example_image TEXT,
+    example_before TEXT,
+    example_after TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- owner_user_id 为 NULL 表示官方模板（仅管理员可改删）；非 NULL 为用户自己录入的模板（仅本人可见/可删）
+  ALTER TABLE templates ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

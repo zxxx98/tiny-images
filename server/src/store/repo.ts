@@ -139,6 +139,41 @@ export interface PlazaShareRow {
 
 export type NewPlazaShare = Omit<PlazaShareRow, "id" | "authorEmail">;
 
+// ---- 官方模板库 ----
+
+// 文生图：example_image 为该模板生成出来的示例图；
+// 图生图：example_before 为生成前示例图，example_after 为生成后示例图
+export type TemplateType = "text2image" | "image2image";
+
+// ownerUserId 为 null 表示官方模板（仅管理员维护、前台不可删）；
+// 非 null 为用户自己录入的模板（仅本人可见、本人可删，示例图同样不可删除）
+export interface TemplateRow {
+  id: number;
+  type: TemplateType;
+  name: string;
+  prompt: string;
+  exampleImage: string | null;
+  exampleBefore: string | null;
+  exampleAfter: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  ownerUserId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TemplateInput {
+  type: TemplateType;
+  name: string;
+  prompt: string;
+  exampleImage?: string | null;
+  exampleBefore?: string | null;
+  exampleAfter?: string | null;
+  enabled?: boolean;
+  sortOrder?: number;
+  ownerUserId?: number | null;
+}
+
 // 提示词优化用的 OpenAI 兼容 chat 接口配置；baseUrl/model 任一为空视为未启用
 export interface PromptOptimizerSettings {
   baseUrl: string;
@@ -956,6 +991,113 @@ export class Repo {
       userId: Number(row.user_id),
       content: String(row.content),
       createdAt: Number(row.created_at),
+    };
+  }
+
+  // ---- official templates（官方模板库）----
+  // 示例图片一旦保存不可删除：更新时示例字段传 null 视为保持不变，只能用新图替换或随模板整体删除
+
+  createTemplate(input: TemplateInput): TemplateRow {
+    const now = Date.now();
+    const res = this.db
+      .prepare(
+        `INSERT INTO templates (type, name, prompt, example_image, example_before, example_after, enabled, sort_order, owner_user_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.type,
+        input.name,
+        input.prompt,
+        input.exampleImage ?? null,
+        input.exampleBefore ?? null,
+        input.exampleAfter ?? null,
+        input.enabled === false ? 0 : 1,
+        input.sortOrder ?? 0,
+        input.ownerUserId ?? null,
+        now,
+        now,
+      );
+    return this.getTemplate(Number(res.lastInsertRowid))!;
+  }
+
+  getTemplate(id: number): TemplateRow | null {
+    const row = this.db.prepare("SELECT * FROM templates WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.toTemplate(row) : null;
+  }
+
+  listTemplates(enabledOnly = false): TemplateRow[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM templates ${enabledOnly ? "WHERE enabled = 1" : ""} ORDER BY sort_order ASC, id ASC`)
+      .all() as Record<string, unknown>[];
+    return rows.map((r) => this.toTemplate(r));
+  }
+
+  // 前台可见模板：官方模板（所有人）+ 本人录入的模板；官方排在用户模板前面
+  listVisibleTemplates(userId: number | null): TemplateRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM templates
+         WHERE enabled = 1 AND (owner_user_id IS NULL OR owner_user_id = ?)
+         ORDER BY (owner_user_id IS NOT NULL) ASC, sort_order ASC, id ASC`,
+      )
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.toTemplate(r));
+  }
+
+  updateTemplate(id: number, patch: Partial<TemplateInput>): TemplateRow | null {
+    const existing = this.getTemplate(id);
+    if (!existing) return null;
+    const merged: TemplateRow = {
+      ...existing,
+      name: patch.name ?? existing.name,
+      prompt: patch.prompt ?? existing.prompt,
+      // 示例图不可删除：patch 里的 null 一律回落为现有值
+      exampleImage: patch.exampleImage ?? existing.exampleImage,
+      exampleBefore: patch.exampleBefore ?? existing.exampleBefore,
+      exampleAfter: patch.exampleAfter ?? existing.exampleAfter,
+      enabled: patch.enabled ?? existing.enabled,
+      sortOrder: patch.sortOrder ?? existing.sortOrder,
+    };
+    this.db
+      .prepare(
+        `UPDATE templates SET name = ?, prompt = ?, example_image = ?, example_before = ?, example_after = ?, enabled = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        merged.name,
+        merged.prompt,
+        merged.exampleImage,
+        merged.exampleBefore,
+        merged.exampleAfter,
+        merged.enabled ? 1 : 0,
+        merged.sortOrder,
+        Date.now(),
+        id,
+      );
+    return this.getTemplate(id);
+  }
+
+  // 返回被删模板供调用方清理示例图文件；不存在返回 null
+  deleteTemplate(id: number): TemplateRow | null {
+    const row = this.getTemplate(id);
+    if (!row) return null;
+    this.db.prepare("DELETE FROM templates WHERE id = ?").run(id);
+    return row;
+  }
+
+  private toTemplate(r: Record<string, unknown>): TemplateRow {
+    return {
+      id: Number(r.id),
+      type: String(r.type) as TemplateType,
+      name: String(r.name),
+      prompt: String(r.prompt),
+      exampleImage: r.example_image === null || r.example_image === undefined ? null : String(r.example_image),
+      exampleBefore: r.example_before === null || r.example_before === undefined ? null : String(r.example_before),
+      exampleAfter: r.example_after === null || r.example_after === undefined ? null : String(r.example_after),
+      enabled: Number(r.enabled) === 1,
+      sortOrder: Number(r.sort_order),
+      ownerUserId: r.owner_user_id === null || r.owner_user_id === undefined ? null : Number(r.owner_user_id),
+      createdAt: Number(r.created_at),
+      updatedAt: Number(r.updated_at),
     };
   }
 
