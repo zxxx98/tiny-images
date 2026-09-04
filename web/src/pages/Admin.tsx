@@ -59,7 +59,7 @@ export default function Admin() {
 // ---- 渠道 ----
 
 export function newChannelDraft(): Partial<Channel> {
-  return { type: "openai-compat", generationMode: "images", editMode: "auto", timeoutMs: 120000, concurrency: 2, enabled: true };
+  return { type: "openai-compat", generationMode: "images", editMode: "auto", timeoutMs: 120000, concurrency: 2, allowPrivateImageFetch: false, enabled: true };
 }
 
 export function changeChannelType(draft: Partial<Channel>, type: Channel["type"]): Partial<Channel> {
@@ -288,6 +288,9 @@ function ChannelsTab() {
               placeholder='{"x-foo":"bar"}'
               spellCheck={false}
             />
+            <label className="check" title="仅对可信的局域网上游启用；开启后该渠道返回的图片 URL 可以访问私网地址。">
+              <input type="checkbox" checked={editing.allowPrivateImageFetch ?? false} onChange={(e) => setEditing({ ...editing, allowPrivateImageFetch: e.target.checked })} /> 允许抓取私网图片
+            </label>
             <label className="check">
               <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} /> 启用
             </label>

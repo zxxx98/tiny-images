@@ -53,7 +53,7 @@ function toUserView(u: UserRow) {
   };
 }
 
-function validateChannelInput(b: Record<string, unknown>): { name?: string; type?: ChannelType; baseUrl?: string; timeoutMs?: number; concurrency?: number; generationMode?: GenerationMode; editMode?: EditMode; extraHeaders?: Record<string, string>; enabled?: boolean } {
+function validateChannelInput(b: Record<string, unknown>): { name?: string; type?: ChannelType; baseUrl?: string; timeoutMs?: number; concurrency?: number; generationMode?: GenerationMode; editMode?: EditMode; extraHeaders?: Record<string, string>; allowPrivateImageFetch?: boolean; enabled?: boolean } {
   const out: Record<string, unknown> = {};
   if (b.name !== undefined) {
     if (typeof b.name !== "string" || !b.name.trim()) throw httpError(400, "'name' must be a non-empty string");
@@ -99,6 +99,8 @@ function validateChannelInput(b: Record<string, unknown>): { name?: string; type
     }
     out.extraHeaders = b.extraHeaders;
   }
+  const allowPrivateImageFetch = optionalBoolean(b, "allowPrivateImageFetch");
+  if (allowPrivateImageFetch !== undefined) out.allowPrivateImageFetch = allowPrivateImageFetch;
   const enabled = optionalBoolean(b, "enabled");
   if (enabled !== undefined) out.enabled = enabled;
   return out;

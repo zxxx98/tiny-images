@@ -19,10 +19,14 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let H: { authorization: string };
 let upstreamUrl = "";
 let now: number;
+let upstreamEntered: (() => void) | null = null;
+let waitForUpstream: Promise<void> | null = null;
 
 beforeEach(async () => {
   upstream = Fastify();
   upstream.post("/v1/images/generations", async (req) => {
+    upstreamEntered?.();
+    if (waitForUpstream) await waitForUpstream;
     const n = typeof (req.body as { n?: number } | null)?.n === "number" ? (req.body as { n: number }).n : 1;
     return {
       created: 1,
@@ -31,6 +35,8 @@ beforeEach(async () => {
   });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "qg-"));
   now = Date.UTC(2026, 0, 1, 15, 59, 59);
+  upstreamEntered = null;
+  waitForUpstream = null;
   repo = new Repo(openDb(dir), () => now);
   repo.createUser({ email: "admin@local", passwordHash: hashPassword("admin-pass"), role: "admin", quotaTotal: null });
   await upstream.listen({ port: 0, host: "127.0.0.1" });
@@ -105,6 +111,23 @@ describe("quota", () => {
     repo.updateUser(s.userId, { enabled: false });
     const r2 = await app.inject({ method: "POST", url: "/v1/images/generations", headers: auth, payload: { model: "mdl", prompt: "p" } });
     expect(r2.statusCode).toBe(401);
+  });
+
+  it("rejects a concurrent request when the first request reserves the final quota", async () => {
+    const s = await setupUser({ quotaTotal: 1, groupName: null });
+    const auth = { authorization: `Bearer ${s.apiKey}` };
+    let release!: () => void;
+    waitForUpstream = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { upstreamEntered = resolve; });
+
+    const first = app.inject({ method: "POST", url: "/v1/images/generations", headers: auth, payload: { model: "mdl", prompt: "p" } });
+    await entered;
+    const second = await app.inject({ method: "POST", url: "/v1/images/generations", headers: auth, payload: { model: "mdl", prompt: "p" } });
+
+    expect(second.statusCode).toBe(402);
+    release();
+    expect((await first).statusCode).toBe(200);
+    expect(repo.getUser(s.userId)?.quotaUsed).toBe(1);
   });
   it("unbound key and admin token bypass quota", async () => {
     // 建渠道/模型但不建用户，创建无主 key

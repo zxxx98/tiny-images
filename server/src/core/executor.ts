@@ -1,4 +1,4 @@
-import { ModelNotFoundError, QuotaError, UpstreamError, httpError } from "./errors.js";
+import { ModelNotFoundError, UpstreamError, httpError } from "./errors.js";
 import type { KeyPool } from "./keyPool.js";
 import type { ModelRouter } from "./router.js";
 import type {
@@ -111,70 +111,68 @@ export class Executor {
     // variations 没有 prompt，不参与全局提示词前置
     const upstreamRequest = payload.kind === "variation" ? payload.req : withGlobalPrompt(payload.req, globalPrompt);
 
-    // 额度：仅普通用户且配置了 quota_total 时生效；按成功生成的图片张数扣减
-    const user = opts.callerUserId ? this.deps.repo.getUser(opts.callerUserId) : null;
-    const quotaLimited = !!user && user.role !== "admin" && user.quotaTotal !== null;
-    if (quotaLimited) {
-      const wanted = "n" in payload.req && typeof payload.req.n === "number" ? payload.req.n : 1;
-      if (user!.quotaTotal! - user!.quotaUsed < wanted) throw new QuotaError();
-    }
+    const wanted = "n" in payload.req && typeof payload.req.n === "number" ? payload.req.n : 1;
+    const reservation = opts.callerUserId ? this.deps.repo.reserveQuota(opts.callerUserId, wanted) : null;
 
     const limiter = this.limiterFor(channel.id, channel.concurrency);
-    return limiter.run(async () => {
-      const start = Date.now();
-      const attempted = new Set<number>();
-      const maxAttempts = this.deps.repo.enabledKeyCount(channel.id);
-      let lastError: unknown = null;
+    try {
+      const response = await limiter.run(async () => {
+        const start = Date.now();
+        const attempted = new Set<number>();
+        const maxAttempts = this.deps.repo.enabledKeyCount(channel.id);
+        let lastError: unknown = null;
 
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const key = this.deps.keyPool.pick(channel.id);
-        if (!key || attempted.has(key.keyId)) break;
-        attempted.add(key.keyId);
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          const key = this.deps.keyPool.pick(channel.id);
+          if (!key || attempted.has(key.keyId)) break;
+          attempted.add(key.keyId);
 
-        const ctx: CallContext = {
-          channel,
-          upstreamModel: route.model.upstreamName,
-          apiKey: key.apiKey,
-          signal: opts.signal ?? new AbortController().signal,
-        };
-        try {
-          const upstreamResult =
-            payload.kind === "generate"
-              ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
-              : payload.kind === "edit"
-                ? await provider.edit(upstreamRequest as UnifiedEditRequest, ctx)
-                : await provider.variation!(upstreamRequest as UnifiedVariationRequest, ctx);
-          const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
-          this.deps.keyPool.markSuccess(key.keyId);
-          this.deps.router.markSuccess(route.model.id);
-          if (quotaLimited) {
-            const charged = this.deps.repo.chargeQuota(user!.id, result.images.length);
-            if (!charged) console.warn(`[quota] concurrent over-spend for user ${user!.id}; images=${result.images.length}`);
+          const ctx: CallContext = {
+            channel,
+            upstreamModel: route.model.upstreamName,
+            apiKey: key.apiKey,
+            signal: opts.signal ?? new AbortController().signal,
+          };
+          try {
+            const upstreamResult =
+              payload.kind === "generate"
+                ? await provider.generate(upstreamRequest as UnifiedGenRequest, ctx)
+                : payload.kind === "edit"
+                  ? await provider.edit(upstreamRequest as UnifiedEditRequest, ctx)
+                  : await provider.variation!(upstreamRequest as UnifiedVariationRequest, ctx);
+            const result = globalPrompt.trim() ? suppressPromptEchoes(upstreamResult) : upstreamResult;
+            this.deps.keyPool.markSuccess(key.keyId);
+            this.deps.router.markSuccess(route.model.id);
+            const latencyMs = Date.now() - start;
+            this.log(publicName, channel.id, opts.callerApiKeyId, "ok", 200, latencyMs, null);
+            return { result, channel, latencyMs };
+          } catch (err) {
+            lastError = err;
+            const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
+            if (rotate) {
+              this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
+              continue;
+            }
+            // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入该模型映射的熔断
+            this.deps.router.markFailure(route.model.id);
+            this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
+            throw globalPrompt.trim() ? suppressPromptEchoedByError(err, channel.name) : err;
           }
-          const latencyMs = Date.now() - start;
-          this.log(publicName, channel.id, opts.callerApiKeyId, "ok", 200, latencyMs, null);
-          return { result, channel, latencyMs };
-        } catch (err) {
-          lastError = err;
-          const rotate = err instanceof UpstreamError && err.keyRetrySafe && KEY_ROTATE_STATUSES.has(err.httpStatus);
-          if (rotate) {
-            this.deps.keyPool.markFailure(key.keyId, this.deps.keyRetryCooldownMs ?? 60_000);
-            continue;
-          }
-          // key 轮换解决不了的错误（网络不通 / 5xx / 超时）计入该模型映射的熔断
-          this.deps.router.markFailure(route.model.id);
-          this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(err), Date.now() - start, toMessage(err));
-          throw globalPrompt.trim() ? suppressPromptEchoedByError(err, channel.name) : err;
         }
-      }
 
-      const error =
-        lastError ??
-        new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
-      this.deps.router.markFailure(route.model.id);
-      this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
-      throw globalPrompt.trim() ? suppressPromptEchoedByError(error, channel.name) : error;
-    });
+        const error =
+          lastError ??
+          new UpstreamError(502, "upstream_error", `no usable api key for channel '${channel.name}'`);
+        this.deps.router.markFailure(route.model.id);
+        this.log(publicName, channel.id, opts.callerApiKeyId, "error", toStatus(error), Date.now() - start, toMessage(error));
+        throw globalPrompt.trim() ? suppressPromptEchoedByError(error, channel.name) : error;
+      });
+      if (reservation) this.deps.repo.settleQuota(reservation.id, response.result.images.length);
+      return response;
+    } catch (err) {
+      if (reservation) this.deps.repo.settleQuota(reservation.id, 0);
+      throw err;
+    }
   }
 
   private limiterFor(channelId: number, concurrency: number): AdaptiveConcurrencyLimiter {

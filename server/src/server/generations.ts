@@ -3,6 +3,7 @@ import { ValidationError } from "../core/errors.js";
 import type { UnifiedEditRequest, UnifiedGenRequest, UnifiedImage, UnifiedImageResult, UnifiedVariationRequest } from "../core/types.js";
 import { conformImages, localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
+import type { ChannelRow } from "../store/repo.js";
 import { streamImageFlow } from "./stream.js";
 import { requireString, validateCommonFields } from "./validate.js";
 
@@ -67,6 +68,19 @@ export function requestSignal(req: FastifyRequest, reply: FastifyReply): AbortSi
 
 type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest | UnifiedVariationRequest;
 
+export interface FinishedSync {
+  body: Record<string, unknown>;
+  channel: ChannelRow;
+}
+
+export function imageFetchOptions(ctx: AppContext, channel: ChannelRow) {
+  return {
+    allowPrivateNetwork: channel.allowPrivateImageFetch,
+    maxBytes: ctx.deps.env.imageFetch?.maxBytes,
+    maxPixels: ctx.deps.env.imageFetch?.maxPixels,
+  };
+}
+
 export async function finishSync(
   ctx: AppContext,
   req: FastifyRequest,
@@ -74,7 +88,7 @@ export async function finishSync(
   model: string,
   kind: "generate" | "edit" | "variation",
   payload: UnifiedPayload,
-): Promise<unknown> {
+): Promise<FinishedSync> {
   const signal = requestSignal(req, reply);
   const routeOpts = {
     callerApiKeyId: req.callerApiKeyId ?? null,
@@ -94,11 +108,12 @@ export async function finishSync(
     dataDir: ctx.deps.env.dataDir,
     fileBaseUrl: fileBaseUrlFor(ctx, req),
     fetchTimeoutMs: r.channel.timeoutMs,
+    ...imageFetchOptions(ctx, r.channel),
     signal,
   });
   reply.header("x-tiny-channel", r.channel.name);
   reply.header("x-tiny-latency-ms", r.latencyMs);
-  return toImagesResponse(r.result, images);
+  return { body: toImagesResponse(r.result, images), channel: r.channel };
 }
 
 export function registerGenerations(ctx: AppContext): void {
@@ -109,9 +124,9 @@ export function registerGenerations(ctx: AppContext): void {
     }
     const started = Date.now();
     try {
-      const body = await finishSync(ctx, req, reply, model, "generate", genReq);
-      await recordGeneration(ctx, req, model, genRecordMeta(genReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
-      return body;
+      const finished = await finishSync(ctx, req, reply, model, "generate", genReq);
+      await recordGeneration(ctx, req, model, genRecordMeta(genReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, finished.body, finished.channel));
+      return finished.body;
     } catch (err) {
       await recordGeneration(ctx, req, model, genRecordMeta(genReq), "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
       throw err;
@@ -123,6 +138,7 @@ export function registerGenerations(ctx: AppContext): void {
 export async function extractHistoryImages(
   ctx: AppContext,
   body: Record<string, unknown>,
+  channel: ChannelRow,
 ): Promise<{ file: string; width: number; height: number; revisedPrompt?: string }[]> {
   const out: { file: string; width: number; height: number; revisedPrompt?: string }[] = [];
   const items = ((body.data as unknown) as Record<string, unknown>[] | undefined) ?? [];
@@ -130,7 +146,7 @@ export async function extractHistoryImages(
     const url = typeof item.url === "string" ? item.url : undefined;
     const b64 = typeof item.b64_json === "string" ? item.b64_json : undefined;
     const revisedPrompt = typeof item.revised_prompt === "string" ? item.revised_prompt : undefined;
-    const saved = await localizeImage(ctx.deps.env.dataDir, { b64, url }, 30_000);
+    const saved = await localizeImage(ctx.deps.env.dataDir, { b64, url }, 30_000, imageFetchOptions(ctx, channel));
     if (saved) out.push({ ...saved, ...(revisedPrompt !== undefined ? { revisedPrompt } : {}) });
   }
   return out;

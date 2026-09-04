@@ -43,7 +43,7 @@ npm run build          # 构建 web/dist 与 server/dist
 npm run dev            # 后端 :3000（tsx watch）
 npm run dev:web        # 前端 :5173（Vite 代理 /v1 /admin /files 到 :3000）
 npm test               # Vitest 全量测试
-node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真实渠道）
+npx tsx server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真实渠道）
 ```
 
 ### 版本号自增
@@ -62,6 +62,8 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 | `ADMIN_PASSWORD` | 无 | 首次启动创建初始 admin 的密码（同上） |
 | `JWT_SECRET` | 自动生成 | 登录 token 签名密钥；默认生成并持久化到 `DATA_DIR/jwt_secret` |
 | `PUBLIC_BASE_URL` | 空 | 生成图对外 URL 的基地址；为空时按请求 Host 推导 |
+| `IMAGE_FETCH_MAX_BYTES` | `52428800` | 上游图片下载和 Base64 解码的大小上限（50 MiB，范围 1–100 MiB） |
+| `IMAGE_FETCH_MAX_PIXELS` | `40000000` | 上游图片解码后的像素上限（40 MP，范围 1–100 MP） |
 | `CLOUDFLARE_IMAGES_ENABLED` | `false` | 仅设为 `true` 时启用图片超分 |
 | `CLOUDFLARE_IMAGES_BASE_URL` | 空 | 启用时必填：接入 Cloudflare 代理并启用 Image Resizing 的 HTTPS 站点根地址；不得含路径、query、凭据，也不能是 localhost/IP |
 | `CLOUDFLARE_IMAGES_TIMEOUT_MS` | `120000` | Cloudflare 首次 AI 变换超时，范围 10000–300000 ms |
@@ -77,6 +79,12 @@ node server/scripts/e2e.ts  # 端到端冒烟（内置 mock 上游，无需真�
 ### 管理设置
 
 管理员可在「管理后台 → 设置」编辑全局提示词和公告。全局提示词会在服务端前置到所有生成与图片编辑请求，但历史记录仍保留用户原始提示词。非空公告会在 Playground 自动弹出；用户点击“知道了”后当前浏览器不再显示该版本，管理员修改公告后会再次显示。
+
+### 上游图片与额度
+
+网关下载上游返回的图片 URL 时，默认只允许公网 HTTP(S) 目标；每次重定向都会重新检查地址，且会限制响应大小、图片格式（PNG/JPEG/WebP）和解码像素。可信局域网中的 ComfyUI 等上游可在「管理后台 → 渠道」开启“允许抓取私网图片”，不应为不可信上游开启此项。
+
+普通用户的额度在请求进入渠道队列前原子预占；上游失败、超时或取消时全额释放，成功则按实际返回图片数结算。服务重启会清理遗留预占，避免额度永久占用。
 
 ### 用户注册
 

@@ -62,9 +62,9 @@ export function registerEdits(ctx: AppContext): void {
       return streamImageFlow(ctx, req, reply, model, "edit", editReq, fileBaseUrlFor(ctx, req));
     }
     try {
-      const body = await finishSync(ctx, req, reply, model, "edit", editReq);
-      await recordGeneration(ctx, req, model, editRecordMeta(editReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
-      return body;
+      const finished = await finishSync(ctx, req, reply, model, "edit", editReq);
+      await recordGeneration(ctx, req, model, editRecordMeta(editReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, finished.body, finished.channel));
+      return finished.body;
     } catch (err) {
       await recordGeneration(ctx, req, model, editRecordMeta(editReq), "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
       throw err;

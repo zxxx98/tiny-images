@@ -19,6 +19,16 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+function consumeQuota(target: Repo, userId: number, amount: number): boolean {
+  try {
+    const reservation = target.reserveQuota(userId, amount);
+    if (reservation) target.settleQuota(reservation.id, amount);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("password", () => {
   it("hash + verify", () => {
     const h = hashPassword("secret123");
@@ -104,16 +114,30 @@ describe("users", () => {
     expect(repo.modelAccessPolicy(allowed.id)).toEqual({ allowedChannelIds: null, allowNsfw: true });
   });
 
-  it("chargeQuota conditional + null quota unlimited", () => {
+  it("settles consumed quota conditionally and leaves unlimited users unchanged", () => {
     const u = repo.createUser({ email: "u@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
-    expect(repo.chargeQuota(u.id, 3)).toBe(true);
+    expect(consumeQuota(repo, u.id, 3)).toBe(true);
     expect(repo.getUser(u.id)?.quotaUsed).toBe(3);
-    expect(repo.chargeQuota(u.id, 3)).toBe(false); // 3+3 > 5
+    expect(consumeQuota(repo, u.id, 3)).toBe(false); // 3+3 > 5
     expect(repo.getUser(u.id)?.quotaUsed).toBe(3);
-    expect(repo.chargeQuota(u.id, 2)).toBe(true);
+    expect(consumeQuota(repo, u.id, 2)).toBe(true);
 
     const free = repo.createUser({ email: "f@x.com", passwordHash: "a:b", role: "user", quotaTotal: null });
-    expect(repo.chargeQuota(free.id, 9999)).toBe(true);
+    expect(consumeQuota(repo, free.id, 9999)).toBe(true);
+  });
+
+  it("reserves quota atomically and refunds the unused amount", () => {
+    const u = repo.createUser({ email: "reserved@x.com", passwordHash: "a:b", role: "user", quotaTotal: 2 });
+    const first = repo.reserveQuota(u.id, 2);
+    expect(first).toMatchObject({ amount: 2 });
+    expect(() => repo.reserveQuota(u.id, 1)).toThrow("quota exceeded");
+    expect(repo.getUser(u.id)?.quotaUsed).toBe(2);
+    repo.settleQuota(first!.id, 1);
+    expect(repo.getUser(u.id)?.quotaUsed).toBe(1);
+    const second = repo.reserveQuota(u.id, 1);
+    expect(second).toMatchObject({ amount: 1 });
+    repo.releaseAllQuotaReservations();
+    expect(repo.getUser(u.id)?.quotaUsed).toBe(1);
   });
 
   it("uses Beijing calendar days and resets quota once after midnight", () => {
@@ -121,12 +145,12 @@ describe("users", () => {
     expect(quotaDayAt(Date.UTC(2026, 0, 1, 16, 0, 0))).toBe("2026-01-02");
 
     const u = repo.createUser({ email: "daily@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
-    expect(repo.chargeQuota(u.id, 5)).toBe(true);
+    expect(consumeQuota(repo, u.id, 5)).toBe(true);
     expect(repo.getUser(u.id)).toMatchObject({ quotaUsed: 5, quotaDay: "2026-01-01" });
 
     now = Date.UTC(2026, 0, 1, 16, 0, 0);
     expect(repo.getUserByEmail("daily@x.com")).toMatchObject({ quotaUsed: 0, quotaDay: "2026-01-02" });
-    expect(repo.chargeQuota(u.id, 2)).toBe(true);
+    expect(consumeQuota(repo, u.id, 2)).toBe(true);
     expect(repo.listUsers()[0]).toMatchObject({ quotaUsed: 2, quotaDay: "2026-01-02" });
     expect(repo.getUser(u.id)?.quotaUsed).toBe(2);
   });
@@ -138,7 +162,7 @@ describe("users", () => {
     const repo1 = new Repo(db1, () => now);
     const repo2 = new Repo(db2, () => now);
     const u = repo1.createUser({ email: "reader@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
-    expect(repo1.chargeQuota(u.id, 1)).toBe(true);
+    expect(consumeQuota(repo1, u.id, 1)).toBe(true);
 
     db1.exec("BEGIN IMMEDIATE");
     try {
@@ -156,12 +180,12 @@ describe("users", () => {
     const newRepo = new Repo(openDb(multiDir), () => Date.UTC(2026, 0, 1, 16, 0, 0));
     try {
       const u = oldRepo.createUser({ email: "skew@x.com", passwordHash: "a:b", role: "user", quotaTotal: 5 });
-      expect(oldRepo.chargeQuota(u.id, 3)).toBe(true);
+      expect(consumeQuota(oldRepo, u.id, 3)).toBe(true);
       expect(newRepo.getUser(u.id)).toMatchObject({ quotaUsed: 0, quotaDay: "2026-01-02" });
-      expect(newRepo.chargeQuota(u.id, 2)).toBe(true);
+      expect(consumeQuota(newRepo, u.id, 2)).toBe(true);
 
       expect(oldRepo.getUser(u.id)).toMatchObject({ quotaUsed: 2, quotaDay: "2026-01-02" });
-      expect(oldRepo.chargeQuota(u.id, 1)).toBe(true);
+      expect(consumeQuota(oldRepo, u.id, 1)).toBe(true);
       expect(newRepo.getUser(u.id)).toMatchObject({ quotaUsed: 3, quotaDay: "2026-01-02" });
     } finally {
       oldRepo.close();

@@ -3,7 +3,8 @@ import { loadEnv } from "../src/env.js";
 
 describe("Cloudflare Images environment", () => {
   it("defaults disabled with conservative limits", () => {
-    expect(loadEnv({}).cloudflareImages).toEqual({
+    const env = loadEnv({});
+    expect(env.cloudflareImages).toEqual({
       enabled: false,
       baseUrl: null,
       timeoutMs: 120_000,
@@ -13,6 +14,7 @@ describe("Cloudflare Images environment", () => {
       maxOutputBytes: 50 * 1024 * 1024,
       concurrency: 2,
     });
+    expect(env.imageFetch).toEqual({ maxBytes: 50 * 1024 * 1024, maxPixels: 40_000_000 });
   });
 
   it("requires an HTTPS public root URL when enabled", () => {
@@ -39,6 +41,8 @@ describe("Cloudflare Images environment", () => {
       UPSCALE_MAX_DIMENSION: "4096",
       UPSCALE_MAX_OUTPUT_BYTES: "9999",
       UPSCALE_CONCURRENCY: "3",
+      IMAGE_FETCH_MAX_BYTES: "1048576",
+      IMAGE_FETCH_MAX_PIXELS: "5678",
     });
     expect(env.cloudflareImages).toEqual({
       enabled: true,
@@ -50,7 +54,9 @@ describe("Cloudflare Images environment", () => {
       maxOutputBytes: 9999,
       concurrency: 3,
     });
+    expect(env.imageFetch).toEqual({ maxBytes: 1_048_576, maxPixels: 5678 });
     expect(() => loadEnv({ CLOUDFLARE_IMAGES_TIMEOUT_MS: "9999" })).toThrow(/TIMEOUT/);
+    expect(() => loadEnv({ IMAGE_FETCH_MAX_BYTES: "1048575" })).toThrow(/IMAGE_FETCH_MAX_BYTES/);
     expect(() => loadEnv({ CLOUDFLARE_IMAGES_ENABLED: "yes" })).toThrow(/true.*false/);
   });
 });
