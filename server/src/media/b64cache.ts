@@ -4,6 +4,12 @@ import path from "node:path";
 import sharp from "sharp";
 import { UpstreamError } from "../core/errors.js";
 import type { UnifiedImage } from "../core/types.js";
+import {
+  DEFAULT_IMAGE_FETCH_MAX_BYTES,
+  DEFAULT_IMAGE_FETCH_MAX_PIXELS,
+  fetchValidatedImage,
+  validateImageBuffer,
+} from "./safeImageFetch.js";
 
 function generatedDir(dataDir: string): string {
   const dir = path.join(dataDir, "generated");
@@ -60,19 +66,13 @@ export function sweepExpired(dataDir: string, ttlMs: number): number {
   return swept;
 }
 
-async function fetchAsB64(url: string, timeoutMs: number, signal: AbortSignal | undefined, channelName: string): Promise<string> {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-  } catch (err) {
-    throw new UpstreamError(502, "upstream_error", `failed to fetch generated image: ${err instanceof Error ? err.message : String(err)}`);
+async function decodeValidatedB64(b64: string, maxBytes: number, maxPixels: number): Promise<Buffer> {
+  if (b64.length > Math.ceil(maxBytes * 4 / 3) + 4) {
+    throw new UpstreamError(502, "upstream_error", "generated image exceeds the configured size limit");
   }
-  if (!res.ok) {
-    throw new UpstreamError(502, "upstream_error", `failed to fetch generated image: HTTP ${res.status}`);
-  }
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.toString("base64");
+  const buffer = Buffer.from(b64, "base64");
+  await validateImageBuffer(buffer, maxBytes, maxPixels);
+  return buffer;
 }
 
 export interface ConformOptions {
@@ -81,18 +81,31 @@ export interface ConformOptions {
   dataDir: string;
   fileBaseUrl: string;
   fetchTimeoutMs: number;
+  allowPrivateNetwork?: boolean;
+  maxBytes?: number;
+  maxPixels?: number;
   signal?: AbortSignal;
 }
 
 export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[]> {
   if (opts.wanted === "auto") return opts.images;
+  const maxBytes = opts.maxBytes ?? DEFAULT_IMAGE_FETCH_MAX_BYTES;
+  const maxPixels = opts.maxPixels ?? DEFAULT_IMAGE_FETCH_MAX_PIXELS;
   const out: UnifiedImage[] = [];
   for (const img of opts.images) {
     if (opts.wanted === "b64_json") {
       if (img.b64 !== undefined) {
+        await decodeValidatedB64(img.b64, maxBytes, maxPixels);
         out.push(img);
       } else if (img.url !== undefined) {
-        out.push({ ...img, b64: await fetchAsB64(img.url, opts.fetchTimeoutMs, opts.signal, "upstream"), url: undefined });
+        const buffer = await fetchValidatedImage(img.url, {
+          timeoutMs: opts.fetchTimeoutMs,
+          maxBytes,
+          maxPixels,
+          allowPrivateNetwork: opts.allowPrivateNetwork,
+          signal: opts.signal,
+        });
+        out.push({ ...img, b64: buffer.toString("base64"), url: undefined });
       } else {
         out.push(img);
       }
@@ -100,6 +113,7 @@ export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[
       if (img.url !== undefined) {
         out.push(img);
       } else if (img.b64 !== undefined) {
+        await decodeValidatedB64(img.b64, maxBytes, maxPixels);
         const { fileName } = saveGeneratedImage(opts.dataDir, img.b64);
         out.push({ ...img, url: `${opts.fileBaseUrl}/files/${fileName}`, b64: undefined });
       } else {
@@ -111,12 +125,28 @@ export async function conformImages(opts: ConformOptions): Promise<UnifiedImage[
 }
 
 // 结果图片本地化供历史引用；下载失败不影响主流程，返回 null
-export async function localizeImage(dataDir: string, img: UnifiedImage, fetchTimeoutMs: number): Promise<LocalizedImage | null> {
+export async function localizeImage(
+  dataDir: string,
+  img: UnifiedImage,
+  fetchTimeoutMs: number,
+  options: Pick<ConformOptions, "allowPrivateNetwork" | "maxBytes" | "maxPixels"> = {},
+): Promise<LocalizedImage | null> {
   try {
-    const b64 = img.b64 !== undefined ? img.b64 : img.url !== undefined ? await fetchAsB64(img.url, fetchTimeoutMs, undefined, "history") : undefined;
-    if (b64 === undefined) return null;
-    const dimensions = await readImageDimensions(Buffer.from(b64, "base64"));
-    return { file: saveGeneratedImage(dataDir, b64).fileName, ...dimensions };
+    const maxBytes = options.maxBytes ?? DEFAULT_IMAGE_FETCH_MAX_BYTES;
+    const maxPixels = options.maxPixels ?? DEFAULT_IMAGE_FETCH_MAX_PIXELS;
+    const buffer = img.b64 !== undefined
+      ? await decodeValidatedB64(img.b64, maxBytes, maxPixels)
+      : img.url !== undefined
+        ? await fetchValidatedImage(img.url, {
+          timeoutMs: fetchTimeoutMs,
+          maxBytes,
+          maxPixels,
+          allowPrivateNetwork: options.allowPrivateNetwork,
+        })
+        : undefined;
+    if (buffer === undefined) return null;
+    const dimensions = await readImageDimensions(buffer);
+    return { file: saveGeneratedImage(dataDir, buffer.toString("base64")).fileName, ...dimensions };
   } catch {
     return null;
   }

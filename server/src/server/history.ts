@@ -8,7 +8,7 @@ import type { ModelAccessPolicy } from "../core/types.js";
 import { localizeImage } from "../media/b64cache.js";
 import type { GenerationRow } from "../store/repo.js";
 import { parseEditMultipart } from "./edits.js";
-import { fileBaseUrlFor, validateGenBody } from "./generations.js";
+import { fileBaseUrlFor, imageFetchOptions, validateGenBody } from "./generations.js";
 import type { JobImage, JobManager, JobRecord } from "./jobs.js";
 
 type ApiImage = JobImage & { url: string };
@@ -87,7 +87,7 @@ async function runJob(
     });
     const images: JobImage[] = [];
     for (const img of r.result.images) {
-      const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
+      const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs, imageFetchOptions(ctx, r.channel));
       if (saved) {
         const entry: JobImage = {
           file: saved.file,
@@ -133,7 +133,7 @@ async function runEditJob(
     const images: JobImage[] = [];
     if (r.result.images.length === 0) throw new Error("edit job returned no images to localize");
     for (const img of r.result.images) {
-      const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs);
+      const saved = await localizeImage(ctx.deps.env.dataDir, img, r.channel.timeoutMs, imageFetchOptions(ctx, r.channel));
       if (!saved) throw new Error("failed to localize an edited image");
       images.push({
         file: saved.file,

@@ -22,6 +22,10 @@ const seeded = seedAdminIfEmpty(repo, env);
 if (seeded.created) {
   console.info(`created initial admin ${seeded.email} (from ADMIN_EMAIL/ADMIN_PASSWORD)`);
 }
+const releasedQuotaReservations = repo.releaseAllQuotaReservations();
+if (releasedQuotaReservations > 0) {
+  console.info(`released ${releasedQuotaReservations} stale quota reservations after restart`);
+}
 
 const router = new ModelRouter(repo);
 const keyPool = new KeyPool(repo);

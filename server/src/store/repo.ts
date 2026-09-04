@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { QuotaError } from "../core/errors.js";
 import type { ChannelType, EditMode, GenerationMode, ModelAccessPolicy } from "../core/types.js";
 
 export interface ChannelRow {
@@ -12,6 +13,7 @@ export interface ChannelRow {
   generationMode: GenerationMode;
   editMode: EditMode;
   extraHeaders: Record<string, string>;
+  allowPrivateImageFetch: boolean;
   enabled: boolean;
   createdAt: number;
 }
@@ -259,6 +261,7 @@ export interface ChannelInput {
   generationMode?: GenerationMode;
   editMode?: EditMode;
   extraHeaders?: Record<string, string>;
+  allowPrivateImageFetch?: boolean;
   enabled?: boolean;
 }
 
@@ -424,8 +427,8 @@ export class Repo {
     try {
       const res = this.db
         .prepare(
-          `INSERT INTO channels (name, type, base_url, timeout_ms, concurrency, generation_mode, edit_mode, extra_headers, enabled, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO channels (name, type, base_url, timeout_ms, concurrency, generation_mode, edit_mode, extra_headers, allow_private_image_fetch, enabled, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.name,
@@ -436,6 +439,7 @@ export class Repo {
           input.generationMode ?? "images",
           input.editMode ?? "auto",
           JSON.stringify(input.extraHeaders ?? {}),
+          input.allowPrivateImageFetch ? 1 : 0,
           input.enabled === false ? 0 : 1,
           Date.now(),
         );
@@ -462,8 +466,8 @@ export class Repo {
     const merged = { ...existing, ...patch };
     try {
       this.db
-        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, concurrency = ?, generation_mode = ?, edit_mode = ?, extra_headers = ?, enabled = ? WHERE id = ?")
-        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.concurrency, merged.generationMode, merged.editMode, JSON.stringify(merged.extraHeaders), merged.enabled ? 1 : 0, id);
+        .prepare("UPDATE channels SET name = ?, type = ?, base_url = ?, timeout_ms = ?, concurrency = ?, generation_mode = ?, edit_mode = ?, extra_headers = ?, allow_private_image_fetch = ?, enabled = ? WHERE id = ?")
+        .run(merged.name, merged.type, merged.baseUrl, merged.timeoutMs, merged.concurrency, merged.generationMode, merged.editMode, JSON.stringify(merged.extraHeaders), merged.allowPrivateImageFetch ? 1 : 0, merged.enabled ? 1 : 0, id);
     } catch (err) {
       if (isUniqueViolation(err)) throw new ConflictError(`channel name '${merged.name}' already exists`);
       throw err;
@@ -487,6 +491,7 @@ export class Repo {
       generationMode: String(row.generation_mode ?? "images") as GenerationMode,
       editMode: String(row.edit_mode) as EditMode,
       extraHeaders: JSON.parse(String(row.extra_headers ?? "{}")) as Record<string, string>,
+      allowPrivateImageFetch: Number(row.allow_private_image_fetch ?? 0) === 1,
       enabled: Number(row.enabled) === 1,
       createdAt: Number(row.created_at),
     };
@@ -1278,11 +1283,66 @@ export class Repo {
     };
   }
 
-  chargeQuota(userId: number, n: number): boolean {
-    this.refreshDailyQuota(userId);
-    const res = this.db
-      .prepare("UPDATE users SET quota_used = quota_used + ? WHERE id = ? AND (quota_total IS NULL OR quota_used + ? <= quota_total)")
-      .run(n, userId, n);
-    return Number(res.changes) > 0;
+  reserveQuota(userId: number, amount: number): { id: string; amount: number } | null {
+    if (!Number.isInteger(amount) || amount < 1) throw new Error("quota reservation amount must be a positive integer");
+    const day = this.currentQuotaDay();
+    const id = randomBytes(16).toString("hex");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const user = this.db.prepare("SELECT role, quota_total, quota_day FROM users WHERE id = ?").get(userId) as { role: string; quota_total: number | null; quota_day: string | null } | undefined;
+      if (!user || user.role === "admin" || user.quota_total === null) {
+        this.db.exec("COMMIT");
+        return null;
+      }
+      if (user.quota_day === null || user.quota_day < day) {
+        this.db.prepare("UPDATE users SET quota_used = 0, quota_day = ? WHERE id = ? AND (quota_day IS NULL OR quota_day < ?)").run(day, userId, day);
+      }
+      const charged = this.db
+        .prepare("UPDATE users SET quota_used = quota_used + ? WHERE id = ? AND quota_total IS NOT NULL AND quota_used + ? <= quota_total")
+        .run(amount, userId, amount);
+      if (Number(charged.changes) !== 1) throw new QuotaError();
+      this.db.prepare("INSERT INTO quota_reservations (id, user_id, amount, quota_day, created_at) VALUES (?, ?, ?, ?, ?)").run(id, userId, amount, day, this.now());
+      this.db.exec("COMMIT");
+      return { id, amount };
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  settleQuota(reservationId: string, used: number): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const reservation = this.db.prepare("SELECT user_id, amount FROM quota_reservations WHERE id = ?").get(reservationId) as { user_id: number; amount: number } | undefined;
+      if (reservation) {
+        const actual = Math.max(0, Math.min(reservation.amount, Number.isInteger(used) ? used : 0));
+        const refund = reservation.amount - actual;
+        if (refund > 0) this.db.prepare("UPDATE users SET quota_used = MAX(0, quota_used - ?) WHERE id = ?").run(refund, reservation.user_id);
+        this.db.prepare("DELETE FROM quota_reservations WHERE id = ?").run(reservationId);
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  releaseAllQuotaReservations(): number {
+    const day = this.currentQuotaDay();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const reservations = this.db.prepare("SELECT id, user_id, amount, quota_day FROM quota_reservations").all() as { id: string; user_id: number; amount: number; quota_day: string }[];
+      for (const reservation of reservations) {
+        if (reservation.quota_day === day) {
+          this.db.prepare("UPDATE users SET quota_used = MAX(0, quota_used - ?) WHERE id = ? AND quota_day = ?").run(reservation.amount, reservation.user_id, day);
+        }
+      }
+      this.db.prepare("DELETE FROM quota_reservations").run();
+      this.db.exec("COMMIT");
+      return reservations.length;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 }

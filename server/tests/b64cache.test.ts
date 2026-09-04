@@ -34,9 +34,59 @@ describe("conformImages", () => {
       dataDir: dir,
       fileBaseUrl: base,
       fetchTimeoutMs: 5000,
+      allowPrivateNetwork: true,
     });
     expect(out[0].b64).toBe(PNG_B64);
     expect(out[1].b64).toBe(PNG_B64);
+  });
+  it("rejects private URLs by default", async () => {
+    upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    const base = await start();
+    await expect(
+      conformImages({
+        images: [{ url: `${base}/img.png` }],
+        wanted: "b64_json",
+        dataDir: dir,
+        fileBaseUrl: base,
+        fetchTimeoutMs: 5000,
+      }),
+    ).rejects.toMatchObject({ type: "upstream_error", message: "generated image URL is not publicly routable" });
+  });
+  it("stops a chunked response once it exceeds the size limit", async () => {
+    upstream.get("/oversized", async (_req, reply) => {
+      reply.hijack();
+      reply.raw.writeHead(200, { "content-type": "image/png", "transfer-encoding": "chunked" });
+      reply.raw.write(Buffer.alloc(8));
+      reply.raw.end(Buffer.alloc(8));
+    });
+    const base = await start();
+
+    await expect(
+      conformImages({
+        images: [{ url: `${base}/oversized` }],
+        wanted: "b64_json",
+        dataDir: dir,
+        fileBaseUrl: base,
+        fetchTimeoutMs: 5000,
+        maxBytes: 10,
+        allowPrivateNetwork: true,
+      }),
+    ).rejects.toMatchObject({ type: "upstream_error", message: "generated image exceeds the configured size limit" });
+  });
+  it("rejects non-image upstream content", async () => {
+    upstream.get("/not-image", async (_req, reply) => reply.type("text/plain").send("not an image"));
+    const base = await start();
+
+    await expect(
+      conformImages({
+        images: [{ url: `${base}/not-image` }],
+        wanted: "b64_json",
+        dataDir: dir,
+        fileBaseUrl: base,
+        fetchTimeoutMs: 5000,
+        allowPrivateNetwork: true,
+      }),
+    ).rejects.toMatchObject({ type: "upstream_error", message: "generated image format or dimensions are not allowed" });
   });
   it("keeps url when wanted, saves b64 to file when needed", async () => {
     const base = await start();
@@ -88,7 +138,7 @@ describe("localizeImage", () => {
 
     upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(source));
     const b = await start();
-    const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000);
+    const fromUrl = await localizeImage(dir, { url: `${b}/img.png` }, 5000, { allowPrivateNetwork: true });
     expect(fromUrl?.file).toMatch(/\.png$/);
     expect(fromUrl).toMatchObject({ width: 2, height: 3 });
 

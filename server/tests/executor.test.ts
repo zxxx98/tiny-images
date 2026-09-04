@@ -152,6 +152,34 @@ describe("Executor", () => {
     expect(logs[0].errorMessage).toContain("slow down");
   });
 
+  it("refunds a user's reserved quota when the upstream fails", async () => {
+    const user = repo.createUser({ email: "quota@x.com", passwordHash: "a:b", role: "user", quotaTotal: 1 });
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ex = build(fakeProvider([async () => {
+      await entered;
+      throw new UpstreamError(500, "upstream_error", "boom");
+    }]));
+
+    const request = ex.generate("img", gen(), { ...caller(null), callerUserId: user.id });
+    await vi.waitFor(() => expect(repo.getUser(user.id)?.quotaUsed).toBe(1));
+    release();
+    await expect(request).rejects.toThrow("boom");
+
+    expect(repo.getUser(user.id)?.quotaUsed).toBe(0);
+  });
+
+  it("settles a reservation using the number of images returned", async () => {
+    const user = repo.createUser({ email: "partial@x.com", passwordHash: "a:b", role: "user", quotaTotal: 2 });
+    const ex = build(fakeProvider([async () => ok]));
+
+    await ex.generate("img", { ...gen(), n: 2 }, { ...caller(null), callerUserId: user.id });
+
+    expect(repo.getUser(user.id)?.quotaUsed).toBe(1);
+  });
+
   it("does not rotate on non-auth errors", async () => {
     let calls = 0;
     const ex = build(

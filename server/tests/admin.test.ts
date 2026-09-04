@@ -84,16 +84,18 @@ describe("/admin/channels", () => {
     expect(created.json().type).toBe("ai-horde");
     expect(created.json().generationMode).toBe("chat");
     expect(created.json().concurrency).toBe(2);
+    expect(created.json().allowPrivateImageFetch).toBe(false);
 
     const patched = await app.inject({
       method: "PATCH",
       url: `/admin/channels/${created.json().id}`,
       headers: H,
-      payload: { type: "openai-compat", generationMode: "images", concurrency: 4 },
+      payload: { type: "openai-compat", generationMode: "images", concurrency: 4, allowPrivateImageFetch: true },
     });
     expect(patched.json().type).toBe("openai-compat");
     expect(patched.json().generationMode).toBe("images");
     expect(patched.json().concurrency).toBe(4);
+    expect(patched.json().allowPrivateImageFetch).toBe(true);
 
     const invalid = await app.inject({
       method: "POST",

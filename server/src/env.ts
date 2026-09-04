@@ -20,6 +20,11 @@ export interface TurnstileEnv {
   timeoutMs: number;
 }
 
+export interface ImageFetchEnv {
+  maxBytes: number;
+  maxPixels: number;
+}
+
 export interface Env {
   port: number;
   dataDir: string;
@@ -28,6 +33,7 @@ export interface Env {
   adminEmail?: string | null;
   adminPassword?: string | null;
   cloudflareImages?: CloudflareImagesEnv;
+  imageFetch?: ImageFetchEnv;
   turnstile?: TurnstileEnv;
 }
 
@@ -115,6 +121,10 @@ export function loadEnv(processEnv: NodeJS.ProcessEnv = process.env): Env {
       maxDimension: parseInteger(processEnv, "UPSCALE_MAX_DIMENSION", 8192, 1, 16_384),
       maxOutputBytes: parseInteger(processEnv, "UPSCALE_MAX_OUTPUT_BYTES", 50 * 1024 * 1024, 1, 100 * 1024 * 1024),
       concurrency: parseInteger(processEnv, "UPSCALE_CONCURRENCY", 2, 1, 16),
+    },
+    imageFetch: {
+      maxBytes: parseInteger(processEnv, "IMAGE_FETCH_MAX_BYTES", 50 * 1024 * 1024, 1024 * 1024, 100 * 1024 * 1024),
+      maxPixels: parseInteger(processEnv, "IMAGE_FETCH_MAX_PIXELS", 40_000_000, 1, 100_000_000),
     },
     turnstile: {
       enabled: !!turnstileSiteKey && !!turnstileSecretKey,

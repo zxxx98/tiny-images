@@ -133,6 +133,7 @@ export interface Channel {
   generationMode: "images" | "chat";
   editMode: "auto" | "multipart" | "json-base64";
   extraHeaders: Record<string, string>;
+  allowPrivateImageFetch: boolean;
   enabled: boolean;
   createdAt: number;
   keys?: ChannelKey[];

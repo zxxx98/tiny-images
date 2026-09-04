@@ -50,9 +50,9 @@ export function registerVariations(ctx: AppContext): void {
     const { model, varReq } = await parseVariationMultipart(req);
     const started = Date.now();
     try {
-      const body = await finishSync(ctx, req, reply, model, "variation", varReq);
-      await recordGeneration(ctx, req, model, variationRecordMeta(varReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, body as Record<string, unknown>));
-      return body;
+      const finished = await finishSync(ctx, req, reply, model, "variation", varReq);
+      await recordGeneration(ctx, req, model, variationRecordMeta(varReq), "ok", Date.now() - started, null, await extractHistoryImages(ctx, finished.body, finished.channel));
+      return finished.body;
     } catch (err) {
       await recordGeneration(ctx, req, model, variationRecordMeta(varReq), "error", Date.now() - started, err instanceof Error ? err.message : String(err), []);
       throw err;

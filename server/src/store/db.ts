@@ -178,6 +178,19 @@ const MIGRATIONS: string[] = [
   -- owner_user_id 为 NULL 表示官方模板（仅管理员可改删）；非 NULL 为用户自己录入的模板（仅本人可见/可删）
   ALTER TABLE templates ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
   `,
+  `
+  ALTER TABLE channels ADD COLUMN allow_private_image_fetch INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+  CREATE TABLE quota_reservations (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    quota_day TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX quota_reservations_user ON quota_reservations(user_id);
+  `,
 ];
 
 export function openDb(dataDir: string): DatabaseSync {

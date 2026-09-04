@@ -3,7 +3,7 @@ import type { FastifyRequest } from "fastify";
 import type { UnifiedEditRequest, UnifiedGenRequest } from "../core/types.js";
 import { conformImages, localizeImage } from "../media/b64cache.js";
 import type { AppContext } from "../app.js";
-import { requestSignal, toDataItem, toImagesResponse } from "./generations.js";
+import { imageFetchOptions, requestSignal, toDataItem, toImagesResponse } from "./generations.js";
 import { sseReply } from "./sse.js";
 
 type UnifiedPayload = UnifiedGenRequest | UnifiedEditRequest;
@@ -46,11 +46,12 @@ export async function streamImageFlow(
       dataDir: ctx.deps.env.dataDir,
       fileBaseUrl,
       fetchTimeoutMs: r.channel.timeoutMs,
+      ...imageFetchOptions(ctx, r.channel),
       signal,
     });
     images.forEach((img, index) => writer.send({ type: "image", index, ...toDataItem(img) }));
     writer.send({ type: "completed", ...toImagesResponse(r.result, images) });
-    await recordStreamGeneration(ctx, callerApiKeyId, callerUserId, model, payload, "ok", r.channel.id, r.latencyMs, null, images);
+    await recordStreamGeneration(ctx, callerApiKeyId, callerUserId, model, payload, "ok", r.channel.id, r.latencyMs, null, images, imageFetchOptions(ctx, r.channel));
     stopHeartbeat();
     writer.end();
   } catch (err) {
@@ -74,13 +75,14 @@ async function recordStreamGeneration(
   latencyMs: number | null,
   errorMessage: string | null,
   images: { b64?: string; url?: string; revisedPrompt?: string }[],
+  imageOptions: { allowPrivateNetwork: boolean; maxBytes?: number; maxPixels?: number } = { allowPrivateNetwork: false },
 ): Promise<void> {
   try {
     const historyImages: { file: string; width: number; height: number; revisedPrompt?: string }[] = [];
     if (status === "ok") {
       const timeoutMs = 30_000;
       for (const img of images) {
-        const saved = await localizeImage(ctx.deps.env.dataDir, img, timeoutMs);
+        const saved = await localizeImage(ctx.deps.env.dataDir, img, timeoutMs, imageOptions);
         if (saved) historyImages.push({ ...saved, ...(img.revisedPrompt !== undefined ? { revisedPrompt: img.revisedPrompt } : {}) });
       }
     }

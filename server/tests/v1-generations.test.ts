@@ -32,7 +32,12 @@ afterEach(async () => {
 
 async function start(generationMode: "images" | "chat" = "images"): Promise<void> {
   await upstream.listen({ port: 0, host: "127.0.0.1" });
-  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`, generationMode });
+  const c = repo.createChannel({
+    name: "mock",
+    baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/v1`,
+    generationMode,
+    allowPrivateImageFetch: true,
+  });
   repo.createKey(c.id, "sk-upstream");
   repo.createModel({ publicName: "img-1", channelId: c.id, upstreamName: "gpt-image-1" });
   const provider = new OpenAICompatProvider();

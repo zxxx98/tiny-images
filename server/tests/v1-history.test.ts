@@ -39,7 +39,7 @@ afterEach(async () => {
 async function start(): Promise<void> {
   await upstream.listen({ port: 0, host: "127.0.0.1" });
   const port = (upstream.server.address() as { port: number }).port;
-  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${port}/v1` });
+  const c = repo.createChannel({ name: "mock", baseUrl: `http://127.0.0.1:${port}/v1`, allowPrivateImageFetch: true });
   repo.createKey(c.id, "sk-upstream");
   repo.createModel({ publicName: "img-1", channelId: c.id, upstreamName: "gpt-image-1" });
   const created = repo.createApiKey("k1");

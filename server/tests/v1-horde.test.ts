@@ -50,6 +50,7 @@ beforeEach(async () => {
     type: "ai-horde",
     baseUrl: `http://127.0.0.1:${(upstream.server.address() as { port: number }).port}/api/v2`,
     timeoutMs: 5000,
+    allowPrivateImageFetch: true,
   });
   repo.createKey(channel.id, "0000000000");
   repo.createModel({ publicName: "pony", channelId: channel.id, upstreamName: "Pony Diffusion" });
