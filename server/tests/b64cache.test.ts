@@ -39,6 +39,23 @@ describe("conformImages", () => {
     expect(out[0].b64).toBe(PNG_B64);
     expect(out[1].b64).toBe(PNG_B64);
   });
+  it("downloads images when the URL hostname requires DNS resolution", async () => {
+    // 生产图片 URL 是域名而非 IP 字面量；Node 的 autoSelectFamily 会以 all:true 调用
+    // 自定义 lookup，必须返回数组形式的解析结果。127.0.0.1 字面量会绕过 lookup，测不到该路径。
+    upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
+    await upstream.listen({ port: 0, host: "::" });
+    const port = (upstream.server.address() as { port: number }).port;
+    const base = `http://localhost:${port}`;
+    const out = await conformImages({
+      images: [{ url: `${base}/img.png` }],
+      wanted: "b64_json",
+      dataDir: dir,
+      fileBaseUrl: base,
+      fetchTimeoutMs: 5000,
+      allowPrivateNetwork: true,
+    });
+    expect(out[0].b64).toBe(PNG_B64);
+  });
   it("rejects private URLs by default", async () => {
     upstream.get("/img.png", async (_req, reply) => reply.type("image/png").send(Buffer.from(PNG_B64, "base64")));
     const base = await start();

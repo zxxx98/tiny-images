@@ -120,8 +120,14 @@ export async function fetchValidatedImage(value: string, options: SafeImageFetch
     const target = await resolveAddress(url, allowPrivateNetwork);
     const dispatcher = new Agent({
       connect: {
-        lookup(_hostname, _options, callback) {
-          callback(null, target.address, target.family);
+        lookup(_hostname, options, callback) {
+          // Node 20+ 默认 Happy Eyeballs 以 all:true 调用 lookup 并要求数组结果；
+          // 返回单地址字符串会让 net 报 ERR_INVALID_IP_ADDRESS，所有域名下载全部失败
+          if (options.all) {
+            callback(null, [{ address: target.address, family: target.family }]);
+          } else {
+            callback(null, target.address, target.family);
+          }
         },
       },
     });

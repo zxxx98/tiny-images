@@ -227,11 +227,18 @@ export function parseImagesResponse(json: unknown, channelName: string): Unified
   if (!obj || !Array.isArray(obj.data)) {
     throw new UpstreamError(502, "upstream_error", `channel '${channelName}' returned malformed response: missing data array`);
   }
-  const images = (obj.data as Record<string, unknown>[]).map((item) => ({
-    ...(typeof item.b64_json === "string" ? { b64: item.b64_json } : {}),
-    ...(typeof item.url === "string" ? { url: item.url } : {}),
-    ...(typeof item.revised_prompt === "string" ? { revisedPrompt: item.revised_prompt } : {}),
-  }));
+  // 上游可能返回既无 b64_json 也无 url 的空壳项；过滤掉，一张可用图都没有就按上游错误处理，
+  // 绝不返回"0 张图的 ok 结果"（那会在历史页变成静默的"已过期"）
+  const images = (obj.data as Record<string, unknown>[])
+    .filter((item) => typeof item.b64_json === "string" || typeof item.url === "string")
+    .map((item) => ({
+      ...(typeof item.b64_json === "string" ? { b64: item.b64_json } : {}),
+      ...(typeof item.url === "string" ? { url: item.url } : {}),
+      ...(typeof item.revised_prompt === "string" ? { revisedPrompt: item.revised_prompt } : {}),
+    }));
+  if (images.length === 0) {
+    throw new UpstreamError(502, "upstream_error", `channel '${channelName}' returned no images in data array`);
+  }
   const created = typeof obj.created === "number" ? obj.created : Math.floor(Date.now() / 1000);
   return { created, images, raw: json };
 }

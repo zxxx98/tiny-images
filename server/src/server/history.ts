@@ -99,6 +99,9 @@ async function runJob(
         jobManager.addImage(jobId, entry);
       }
     }
+    if (images.length < r.result.images.length) {
+      ctx.app.log.warn(`job ${jobId}: localized ${images.length}/${r.result.images.length} images (download or validation failed)`);
+    }
     jobManager.finish(jobId, { status: "ok", channelId: r.channel.id, channelName: r.channel.name, latencyMs: r.latencyMs, errorMessage: null });
     ctx.deps.repo.completeGeneration(generationId, {
       status: "ok",
