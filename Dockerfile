@@ -4,9 +4,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY web/package.json web/
-RUN npm ci
+# postinstall 依赖 .git 与 scripts/，镜像构建内不可用，跳过；版本号在下一步显式生成
+RUN npm ci --ignore-scripts
+COPY scripts scripts/
 COPY web/ web/
-RUN npm run build -w web
+RUN npm run version:gen && npm run build -w web
+# server 的 tsconfig 继承仓库根的 tsconfig.base.json，必须一并复制
+COPY tsconfig.base.json ./
 COPY server/ server/
 RUN npm run build -w server
 
@@ -20,7 +24,7 @@ ENV NODE_ENV=production \
     PORT=3000
 COPY package.json package-lock.json ./
 COPY server/package.json server/
-RUN npm ci --workspace server --omit=dev && npm cache clean --force
+RUN npm ci --workspace server --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
 VOLUME /data

@@ -72,7 +72,7 @@ describe("OpenAICompatProvider.generate", () => {
     let seen: Record<string, unknown> = {};
     upstream.post("/v1/images/generations", async (req, reply) => {
       seen = req.body as Record<string, unknown>;
-      return reply.send({ created: 1, data: [] });
+      return reply.send({ created: 1, data: [{ url: "http://x/y.png" }] });
     });
     await start();
 
@@ -95,11 +95,31 @@ describe("OpenAICompatProvider.generate", () => {
     let seenExtra = "";
     upstream.post("/v1/images/generations", async (req, reply) => {
       seenExtra = String(req.headers["x-extra"] ?? "");
-      return reply.send({ created: 1, data: [] });
+      return reply.send({ created: 1, data: [{ url: "http://x/y.png" }] });
     });
     await start();
     await new OpenAICompatProvider().generate(gen(), ctx({ channel: channel({ extraHeaders: { "x-extra": "1" } }) }));
     expect(seenExtra).toBe("1");
+  });
+
+  it("rejects data arrays without any usable image instead of returning empty ok", async () => {
+    upstream.post("/v1/images/generations", async (_req, reply) =>
+      reply.send({ created: 1, data: [{ revised_prompt: "x" }] }),
+    );
+    await start();
+    await expect(new OpenAICompatProvider().generate(gen(), ctx())).rejects.toMatchObject({
+      httpStatus: 502,
+      type: "upstream_error",
+    });
+  });
+
+  it("drops unusable data items and keeps the usable ones", async () => {
+    upstream.post("/v1/images/generations", async (_req, reply) =>
+      reply.send({ created: 1, data: [{ revised_prompt: "x" }, { url: "http://x/y.png" }] }),
+    );
+    await start();
+    const r = await new OpenAICompatProvider().generate(gen(), ctx());
+    expect(r.images).toEqual([{ url: "http://x/y.png" }]);
   });
 
   it("maps upstream errors and network failures", async () => {
